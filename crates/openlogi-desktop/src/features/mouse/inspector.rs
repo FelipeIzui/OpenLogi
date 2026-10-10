@@ -260,7 +260,9 @@ fn mouse_create_macro_button(
         .w_full()
         .label(label)
         .on_click(move |_, window, cx| {
-            observer.update(cx, |view, cx| view.start_workflow(button, &seed, window, cx));
+            observer.update(cx, |view, cx| {
+                view.start_workflow(button, &seed, window, cx)
+            });
         })
 }
 

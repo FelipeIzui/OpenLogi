@@ -494,11 +494,8 @@ impl Render for MouseModelView {
 
         self.reset_for_device(device_key);
 
-        let gesture_buttons = visible_gesture_buttons(
-            gesture_maps,
-            editing_app.as_deref(),
-            overridden,
-        );
+        let gesture_buttons =
+            visible_gesture_buttons(gesture_maps, editing_app.as_deref(), overridden);
 
         let viewport_h = f32::from(window.viewport_size().height);
         let viewport_w = f32::from(window.viewport_size().width);
