@@ -389,6 +389,7 @@ impl RenderOnce for WorkflowStepRow {
             .w_full()
             .gap_1()
             .child(
+                div().flex_1().min_w_0().child(
                 MenuRow::new(("wf-step", idx))
                     .child(
                         h_flex()
@@ -414,6 +415,7 @@ impl RenderOnce for WorkflowStepRow {
                     .on_click(move |_e, window, cx| {
                         view_edit.update(cx, |v, vcx| v.edit_workflow_step(idx, window, vcx));
                     }),
+                ),
             )
             .child(
                 Button::new(("wf-remove", idx))
