@@ -168,11 +168,11 @@ impl FunctionRowView {
         self.active_editor = Some(kind);
         self.text_state = None;
         self.workflow_draft.clear();
-            self.workflow_initialized = false;
-            self.workflow_input = None;
-            self.workflow_kind = WorkflowInputKind::default();
-            self.workflow_editing = None;
-            self.workflow_error = None;
+        self.workflow_initialized = false;
+        self.workflow_input = None;
+        self.workflow_kind = WorkflowInputKind::default();
+        self.workflow_editing = None;
+        self.workflow_error = None;
         cx.notify();
     }
 
@@ -180,11 +180,11 @@ impl FunctionRowView {
         self.active_editor = None;
         self.text_state = None;
         self.workflow_draft.clear();
-            self.workflow_initialized = false;
-            self.workflow_input = None;
-            self.workflow_kind = WorkflowInputKind::default();
-            self.workflow_editing = None;
-            self.workflow_error = None;
+        self.workflow_initialized = false;
+        self.workflow_input = None;
+        self.workflow_kind = WorkflowInputKind::default();
+        self.workflow_editing = None;
+        self.workflow_error = None;
         cx.notify();
     }
 
@@ -355,9 +355,10 @@ impl Render for FunctionRowView {
                     }
                     if self.workflow_input.is_none() {
                         let kind = self.workflow_kind;
-                        self.workflow_input = Some(cx.new(|cx| {
-                            InputState::new(window, cx).placeholder(kind.placeholder())
-                        }));
+                        self.workflow_input =
+                            Some(cx.new(|cx| {
+                                InputState::new(window, cx).placeholder(kind.placeholder())
+                            }));
                     }
                 }
                 _ => {
