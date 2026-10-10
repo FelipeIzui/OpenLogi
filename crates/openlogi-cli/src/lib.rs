@@ -146,6 +146,26 @@ mod tests {
     }
 
     #[test]
+    fn button_spy_timeout_is_bounded() {
+        use cmd::diag::button_spy::ButtonSpyArgs;
+        let cli = Cli::try_parse_from([
+            "openlogi", "diag", "button-spy", "--device", "G903", "--seconds", "45",
+        ]).expect("bounded read-only button spy command parses");
+        match cli.cmd.expect("diag command") {
+            Command::Diag(DiagCmd::ButtonSpy(ButtonSpyArgs { device, seconds })) => {
+                assert_eq!(device.as_deref(), Some("G903"));
+                assert_eq!(seconds, 45);
+            }
+            other => panic!("expected diag button spy, got {other:?}"),
+        }
+        for duration in ["0", "4", "121", "9999"] {
+            assert!(Cli::try_parse_from([
+                "openlogi", "diag", "button-spy", "--seconds", duration
+            ]).is_err());
+        }
+    }
+
+    #[test]
     fn lighting_color_is_positional_and_method_is_a_flag() {
         let cli = Cli::try_parse_from([
             "openlogi", "diag", "lighting", "ff0000", "--method", "effects",

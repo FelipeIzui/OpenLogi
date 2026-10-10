@@ -12,6 +12,7 @@ use openlogi_core::device::DeviceInventory;
 use openlogi_hid::{DeviceRoute, dump_features};
 
 pub mod battery;
+pub mod button_spy;
 pub mod controls;
 pub mod dpi;
 pub mod features;
@@ -26,6 +27,8 @@ pub enum DiagCmd {
     Features(features::FeaturesArgs),
     /// Dump HID++ 0x1b04 reprogrammable controls and capability flags.
     Controls(controls::ControlsArgs),
+    /// Passively observe 0x8110 button-bitmap notifications (no device writes).
+    ButtonSpy(button_spy::ButtonSpyArgs),
     /// Read the raw battery report (0x1004, 0x1000, or 0x1F20 fields).
     Battery(battery::BatteryArgs),
     /// Read DPI → write a small delta → read back → restore → report.
@@ -48,6 +51,7 @@ impl DiagCmd {
         match self {
             Self::Features(args) => features::run(args).await,
             Self::Controls(args) => controls::run(args).await,
+            Self::ButtonSpy(args) => button_spy::run(args).await,
             Self::Battery(args) => battery::run(args).await,
             Self::Dpi(args) => dpi::run(args).await,
             Self::Smartshift(args) => smartshift::run(args).await,
