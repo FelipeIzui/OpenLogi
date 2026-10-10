@@ -6,7 +6,7 @@
 //! returns to the action list; the panel itself closes when the key is
 //! deselected.
 //!
-//! [`compact_panel`]: crate::features::mouse::picker::compact_panel
+//! [`compact_panel`]: crate::features::binding_editor::compact_panel
 
 #![expect(
     clippy::needless_pass_by_value,
@@ -14,6 +14,11 @@
     reason = "GPUI builders take owned Copy palette values; entity.update wants closures"
 )]
 
+use super::function_row::{FunctionRowView, KeyTarget, commit_key_action};
+use crate::features::binding_editor::{compact_panel, divider, editor_scroll_list, title};
+use crate::state::AppState;
+use crate::ui::components::{MenuRow, control_input};
+use crate::ui::theme::{self, Palette, Typography as _};
 use gpui::{
     App, Entity, FontWeight, IntoElement, ParentElement, RenderOnce, Styled, Window, div, px, svg,
 };
@@ -25,13 +30,6 @@ use gpui_component::{
     v_flex,
 };
 use openlogi_core::binding::{Action, KeyCombo, WorkflowStep};
-use openlogi_core::config::KeyTrigger;
-
-use super::function_row::FunctionRowView;
-use crate::features::mouse::picker::{compact_panel, divider, editor_scroll_list, title};
-use crate::state::{AppState, DeviceRecord, StateEvent};
-use crate::ui::components::{MenuRow, control_input};
-use crate::ui::theme::{self, Palette, Typography as _};
 
 /// Which power-user editor is showing for the selected key.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -152,7 +150,7 @@ pub(crate) fn workflow_editor_seed(action: Option<&Action>) -> Vec<WorkflowStep>
 
 /// Render the editor card for `kind`, replacing the panel's action list.
 pub fn editor_card(
-    trigger: KeyTrigger,
+    target: KeyTarget,
     kind: PowerUserKind,
     text_state: Option<Entity<InputState>>,
     workflow: WorkflowEditorState,
@@ -160,9 +158,9 @@ pub fn editor_card(
     pal: Palette,
 ) -> gpui::Div {
     match kind {
-        PowerUserKind::Workflow => workflow_editor_card(trigger, workflow, view, pal),
+        PowerUserKind::Workflow => workflow_editor_card(target, workflow, view, pal),
         _ => match text_state {
-            Some(state) => text_editor_card(trigger, kind, state, view, pal),
+            Some(state) => text_editor_card(target, kind, state, view, pal),
             None => compact_panel(pal)
                 .w(px(300.))
                 .child(title(tr!("keyboard.editor_unavailable"), pal)),
@@ -173,14 +171,14 @@ pub fn editor_card(
 /// The TypeText / RunAppleScript / RunShellCommand editors share a single text
 /// field; only the commit wrapping differs.
 fn text_editor_card(
-    trigger: KeyTrigger,
+    target: KeyTarget,
     kind: PowerUserKind,
     text_state: Entity<InputState>,
     view: &Entity<FunctionRowView>,
     pal: Palette,
 ) -> gpui::Div {
     let heading = tr!(kind.heading_key());
-    let key_name = trigger.to_string();
+    let key_name = target.label();
 
     compact_panel(pal)
         .w(px(300.))
@@ -194,18 +192,17 @@ fn text_editor_card(
                 .p_2()
                 .gap_2()
                 .child(div().child(control_input(&text_state).cleanable(true)))
-                .child(editor_action_row(trigger, kind, view)),
+                .child(editor_action_row(target, kind, view)),
         )
 }
 
 /// Cancel (back to list) + Save (commit the drafted text).
 fn editor_action_row(
-    trigger: KeyTrigger,
+    target: KeyTarget,
     kind: PowerUserKind,
     view: &Entity<FunctionRowView>,
 ) -> impl IntoElement {
     let view_save = view.clone();
-    let trigger_save = trigger.clone();
     let view_cancel = view.clone();
 
     h_flex()
@@ -235,13 +232,7 @@ fn editor_action_row(
                         PowerUserKind::RunShellCommand => Action::RunShellCommand(text),
                         PowerUserKind::Workflow => return,
                     };
-                    AppState::update(cx, |state, cx| {
-                        let key = state.current_record().map(DeviceRecord::device_key);
-                        state.commit_keyboard_binding(trigger_save.clone(), Some(action));
-                        if let Some(key) = key {
-                            cx.emit(StateEvent::BindingsChanged(key));
-                        }
-                    });
+                    AppState::apply(cx, |state| commit_key_action(state, &target, Some(action)));
                     view_save.update(cx, |v, vcx| v.close_editor(vcx));
                 }),
         )
@@ -249,12 +240,12 @@ fn editor_action_row(
 
 /// The Workflow editor: compose text, shortcut and delay steps without TOML.
 fn workflow_editor_card(
-    trigger: KeyTrigger,
+    target: KeyTarget,
     draft: WorkflowEditorState,
     view: &Entity<FunctionRowView>,
     pal: Palette,
 ) -> gpui::Div {
-    let key_name = trigger.to_string();
+    let key_name = target.label();
     let WorkflowEditorState {
         steps,
         input,
@@ -364,14 +355,8 @@ fn workflow_editor_card(
                                     }
                                     let steps = view_save.read(cx).workflow_draft().to_vec();
                                     let action = Action::Workflow(steps);
-                                    AppState::update(cx, |state, cx| {
-                                        let key =
-                                            state.current_record().map(DeviceRecord::device_key);
-                                        state
-                                            .commit_keyboard_binding(trigger.clone(), Some(action));
-                                        if let Some(key) = key {
-                                            cx.emit(StateEvent::BindingsChanged(key));
-                                        }
+                                    AppState::apply(cx, |state| {
+                                        commit_key_action(state, &target, Some(action))
                                     });
                                     view_save.update(cx, |v, vcx| v.close_editor(vcx));
                                 }),
@@ -515,7 +500,6 @@ mod tests {
             .is_empty()
         );
     }
-
     #[test]
     fn workflow_composer_parses_text_shortcuts_and_delays() {
         assert_eq!(
