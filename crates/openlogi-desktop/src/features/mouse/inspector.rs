@@ -62,8 +62,7 @@ pub(super) fn binding_inspector(
     cx: &Context<MouseModelView>,
 ) -> gpui::Div {
     let pal = theme::palette(cx);
-    let workflow = picker.workflow.cloned();
-    let body = if let Some(draft) = workflow {
+    let body = if let Some(draft) = picker.workflow {
         mouse_workflow_editor(draft, picker.view, pal)
     } else {
         match data.selected {
@@ -261,7 +260,7 @@ fn mouse_create_macro_button(
         .label(label)
         .on_click(move |_, window, cx| {
             observer.update(cx, |view, cx| {
-                view.start_workflow(button, &seed, window, cx)
+                view.start_workflow(button, &seed, window, cx);
             });
         })
 }
@@ -845,7 +844,7 @@ fn custom_application_editor(
 
 /// Compose and save a keyboard/Unicode workflow for a host-visible mouse button.
 fn mouse_workflow_editor(
-    draft: MouseWorkflowDraft,
+    draft: &MouseWorkflowDraft,
     view: &Entity<MouseModelView>,
     pal: Palette,
 ) -> gpui::Div {
