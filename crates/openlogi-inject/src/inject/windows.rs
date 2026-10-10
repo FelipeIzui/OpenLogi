@@ -202,14 +202,15 @@ fn post_unicode(text: &str) {
     const MAX_EVENTS_PER_BATCH: usize = 512;
     let mut events = Vec::with_capacity(MAX_EVENTS_PER_BATCH);
     for character in text.chars() {
+        let event_count = character.len_utf16() * 2;
+        if events.len() + event_count > MAX_EVENTS_PER_BATCH {
+            send_inputs(&events);
+            events.clear();
+        }
         let mut buffer = [0u16; 2];
         for &unit in character.encode_utf16(&mut buffer).iter() {
             events.push(unicode_key_input(unit, false));
             events.push(unicode_key_input(unit, true));
-        }
-        if events.len() >= MAX_EVENTS_PER_BATCH {
-            send_inputs(&events);
-            events.clear();
         }
     }
     if !events.is_empty() {
@@ -387,13 +388,18 @@ fn key_input(vk: u16, key_up: bool) -> INPUT {
 }
 
 fn unicode_key_input(unit: u16, key_up: bool) -> INPUT {
+    let flags = if key_up {
+        KEYEVENTF_UNICODE | KEYEVENTF_KEYUP
+    } else {
+        KEYEVENTF_UNICODE
+    };
     INPUT {
         r#type: INPUT_KEYBOARD,
         Anonymous: INPUT_0 {
             ki: KEYBDINPUT {
                 wVk: 0,
                 wScan: unit,
-                dwFlags: KEYEVENTF_UNICODE | if key_up { KEYEVENTF_KEYUP } else { 0 },
+                dwFlags: flags,
                 time: 0,
                 dwExtraInfo: 0,
             },
