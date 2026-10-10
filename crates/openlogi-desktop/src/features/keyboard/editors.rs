@@ -279,7 +279,9 @@ fn workflow_editor_card(
             .small()
             .label(candidate.label())
             .on_click(move |_e, window, cx| {
-                v.update(cx, |v, vcx| v.set_workflow_input_kind(candidate, window, vcx));
+                v.update(cx, |v, vcx| {
+                    v.set_workflow_input_kind(candidate, window, vcx)
+                });
             })
     });
 
@@ -300,25 +302,38 @@ fn workflow_editor_card(
                 .p_2()
                 .gap_2()
                 .child(h_flex().gap_1().children(step_buttons))
-                .child(div().text_caption().text_color(pal.text_muted).child(
-                    format!("{} {}", if editing.is_some() { "Edit" } else { "New" }, kind.label()),
-                ))
+                .child(
+                    div()
+                        .text_caption()
+                        .text_color(pal.text_muted)
+                        .child(format!(
+                            "{} {}",
+                            if editing.is_some() { "Edit" } else { "New" },
+                            kind.label()
+                        )),
+                )
                 .children(input.map(|input| control_input(&input).cleanable(true)))
                 .children(error.map(|message| {
-                    div().text_caption().text_color(pal.text_muted).child(message)
+                    div()
+                        .text_caption()
+                        .text_color(pal.text_muted)
+                        .child(message)
                 }))
                 .child(
                     Button::new("wf-add-step")
                         .ghost()
                         .small()
-                        .label(if editing.is_some() { "Update step" } else { "Add step" })
+                        .label(if editing.is_some() {
+                            "Update step"
+                        } else {
+                            "Add step"
+                        })
                         .on_click(move |_e, window, cx| {
                             let input = view_add.read(cx).workflow_input();
                             if let Some(input) = input {
                                 let value = input.read(cx).value().to_string();
-                                let success = view_add.update(cx, |v, vcx| {
-                                    v.apply_workflow_input(&value, vcx)
-                                });
+                                let success = view_add
+                                    .update(cx, |v, vcx| v.apply_workflow_input(&value, vcx));
                                 if success {
                                     input.update(cx, |state, cx| {
                                         state.set_value(String::new(), window, cx);
@@ -350,8 +365,10 @@ fn workflow_editor_card(
                                     let steps = view_save.read(cx).workflow_draft().to_vec();
                                     let action = Action::Workflow(steps);
                                     AppState::update(cx, |state, cx| {
-                                        let key = state.current_record().map(DeviceRecord::device_key);
-                                        state.commit_keyboard_binding(trigger.clone(), Some(action));
+                                        let key =
+                                            state.current_record().map(DeviceRecord::device_key);
+                                        state
+                                            .commit_keyboard_binding(trigger.clone(), Some(action));
                                         if let Some(key) = key {
                                             cx.emit(StateEvent::BindingsChanged(key));
                                         }
@@ -518,5 +535,4 @@ mod tests {
         assert!(parse_workflow_input(WorkflowInputKind::Shortcut, "???").is_err());
         assert!(parse_workflow_input(WorkflowInputKind::Text, "   ").is_err());
     }
-
 }

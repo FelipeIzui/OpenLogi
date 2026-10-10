@@ -297,11 +297,7 @@ impl FunctionRowView {
     }
 
     /// Commit to the draft only after successful step validation.
-    pub(crate) fn apply_workflow_input(
-        &mut self,
-        raw: &str,
-        cx: &mut Context<Self>,
-    ) -> bool {
+    pub(crate) fn apply_workflow_input(&mut self, raw: &str, cx: &mut Context<Self>) -> bool {
         let step = match parse_workflow_input(self.workflow_kind, raw) {
             Ok(step) => step,
             Err(message) => {
@@ -405,9 +401,10 @@ impl Render for FunctionRowView {
                     }
                     if self.workflow_input.is_none() {
                         let kind = self.workflow_kind;
-                        self.workflow_input = Some(cx.new(|cx| {
-                            InputState::new(window, cx).placeholder(kind.placeholder())
-                        }));
+                        self.workflow_input =
+                            Some(cx.new(|cx| {
+                                InputState::new(window, cx).placeholder(kind.placeholder())
+                            }));
                     }
                 }
                 _ => {
