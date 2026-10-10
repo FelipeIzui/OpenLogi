@@ -457,6 +457,22 @@ impl MouseModelView {
     }
 }
 
+/// Only show gesture labels not replaced by a per-app button override.
+fn visible_gesture_buttons(
+    gesture_maps: &BTreeMap<ButtonId, BTreeMap<GestureDirection, Action>>,
+    editing_app: Option<&str>,
+    overridden: Option<&BTreeMap<ButtonId, Action>>,
+) -> Vec<ButtonId> {
+    gesture_maps
+        .keys()
+        .copied()
+        .filter(|button| {
+            editing_app.is_none()
+                || !overridden.is_some_and(|overrides| overrides.contains_key(button))
+        })
+        .collect()
+}
+
 impl Render for MouseModelView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.localize_action_picker_inputs(window, cx);
@@ -478,14 +494,11 @@ impl Render for MouseModelView {
 
         self.reset_for_device(device_key);
 
-        let gesture_buttons: Vec<ButtonId> = gesture_maps
-            .keys()
-            .copied()
-            .filter(|button| {
-                editing_app.is_none()
-                    || !overridden.is_some_and(|overrides| overrides.contains_key(button))
-            })
-            .collect();
+        let gesture_buttons = visible_gesture_buttons(
+            gesture_maps,
+            editing_app.as_deref(),
+            overridden,
+        );
 
         let viewport_h = f32::from(window.viewport_size().height);
         let viewport_w = f32::from(window.viewport_size().width);

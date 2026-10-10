@@ -186,23 +186,7 @@ fn button_inspector(
             pal,
         ))
         .child(current_action_card(&action, picker, pal))
-        .child({
-            let observer = picker.view.clone();
-            let seed = action.clone();
-            Button::new("mouse-create-macro")
-                .outline()
-                .w_full()
-                .label(if matches!(action, Action::Workflow(_)) {
-                    "Edit Macro…"
-                } else {
-                    "Create Macro…"
-                })
-                .on_click(move |_, window, cx| {
-                    observer.update(cx, |view, cx| {
-                        view.start_workflow(button, &seed, window, cx);
-                    });
-                })
-        })
+        .child(mouse_create_macro_button(button, &action, picker.view))
         .when(overridden, |panel| {
             let observer = picker.view.clone();
             panel.child(
@@ -255,6 +239,28 @@ fn button_inspector(
                 pal,
                 cx,
             ))
+        })
+}
+
+/// Expose the shared workflow composer from an existing mouse binding.
+fn mouse_create_macro_button(
+    button: ButtonId,
+    action: &Action,
+    view: &Entity<MouseModelView>,
+) -> impl IntoElement {
+    let observer = view.clone();
+    let seed = action.clone();
+    let label = if matches!(action, Action::Workflow(_)) {
+        "Edit Macro…"
+    } else {
+        "Create Macro…"
+    };
+    Button::new("mouse-create-macro")
+        .outline()
+        .w_full()
+        .label(label)
+        .on_click(move |_, window, cx| {
+            observer.update(cx, |view, cx| view.start_workflow(button, &seed, window, cx));
         })
 }
 
@@ -866,7 +872,7 @@ fn mouse_workflow_editor(
         .children(
             draft
                 .steps
-                .into_iter()
+                .iter()
                 .enumerate()
                 .map(|(idx, step)| mouse_workflow_step_row(idx, step, view)),
         )
@@ -926,10 +932,10 @@ fn mouse_workflow_step_label(step: &WorkflowStep) -> String {
 
 fn mouse_workflow_step_row(
     idx: usize,
-    step: WorkflowStep,
+    step: &WorkflowStep,
     view: &Entity<MouseModelView>,
 ) -> impl IntoElement {
-    let label = mouse_workflow_step_label(&step);
+    let label = mouse_workflow_step_label(step);
     let edit = view.clone();
     let remove = view.clone();
     h_flex()
@@ -969,7 +975,7 @@ fn mouse_workflow_actions(
                 .ghost()
                 .label(tr!("common.cancel"))
                 .on_click(move |_, _, cx| {
-                    cancel.update(cx, |view, cx| view.close_workflow(cx));
+                    cancel.update(cx, MouseModelView::close_workflow);
                 }),
         )
         .child(
@@ -987,7 +993,7 @@ fn mouse_workflow_actions(
                     AppState::apply(cx, |state| {
                         state.commit_binding(button, Action::Workflow(draft.steps))
                     });
-                    save.update(cx, |view, cx| view.close_workflow(cx));
+                    save.update(cx, MouseModelView::close_workflow);
                 }),
         )
 }
