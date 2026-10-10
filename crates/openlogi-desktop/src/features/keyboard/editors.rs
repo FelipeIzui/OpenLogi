@@ -18,7 +18,7 @@ use gpui::{
     App, Entity, FontWeight, IntoElement, ParentElement, RenderOnce, Styled, Window, div, px, svg,
 };
 use gpui_component::{
-    Icon, IconName, Sizable as _,
+    Sizable as _,
     button::{Button, ButtonVariants},
     h_flex,
     input::InputState,
