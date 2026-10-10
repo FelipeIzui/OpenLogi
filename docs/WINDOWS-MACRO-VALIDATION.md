@@ -6,8 +6,11 @@ macro library, and mouse-button assignment are outside this PR.
 
 ## GitHub Actions prerequisite
 
-The fork currently has no workflow runs (including none on this PR). In a new
-GitHub fork, Actions may require explicit activation by a repository admin:
+At the start of this validation, this fork had no workflow runs. The
+repository owner confirmed that GitHub Actions were enabled on 2026-10-10.
+Enabling Actions does not retroactively rerun previous pull-request events;
+a new commit to the PR branch produces a `pull_request.synchronize` event.
+Follow this checklist and check the run on the **new** commit:
 
 1. Open `https://github.com/FelipeIzui/OpenLogi/actions`.
 2. If GitHub displays an **I understand my workflows, go ahead and enable them**
