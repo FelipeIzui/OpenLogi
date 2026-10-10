@@ -64,7 +64,9 @@ pub async fn run(args: ButtonSpyArgs) -> Result<()> {
         .iter()
         .position(|feature| feature.id == MOUSE_BUTTON_SPY_ID)
         .ok_or_else(|| anyhow!("device does not expose HID++ 0x8110 (Mouse Button Spy)"))?;
-    let index: u8 = index.try_into().context("HID++ feature index exceeds one byte")?;
+    let index: u8 = index
+        .try_into()
+        .context("HID++ feature index exceeds one byte")?;
     let channel = openlogi_hid::channel_pool()
         .open(&route)
         .await
@@ -81,19 +83,22 @@ pub async fn run(args: ButtonSpyArgs) -> Result<()> {
     });
 
     println!("device: {name}");
-    println!("0x8110 feature index: {index}; passive observation for {} seconds", args.seconds);
+    println!(
+        "0x8110 feature index: {index}; passive observation for {} seconds",
+        args.seconds
+    );
     println!("Press and release each of the FOUR side buttons separately.");
     println!("Note which button bit (if any) appears for each physical press.");
     println!("Read-only: no receiver, onboard-profile, filter, or binding changes.");
     let deadline = Instant::now() + Duration::from_secs(args.seconds);
     let mut previous = 0u16;
-    let mut received = 0u64;
+    let mut reports_seen = 0u64;
     loop {
         tokio::select! {
             () = sleep_until(deadline) => break,
             message = receiver.recv() => {
                 let Some(current) = message else { break };
-                received += 1;
+                reports_seen += 1;
                 let (pressed, released) = bitmap_changes(previous, current);
                 for bit in 0..16 {
                     let flag = 1u16 << bit;
@@ -109,11 +114,11 @@ pub async fn run(args: ButtonSpyArgs) -> Result<()> {
         }
     }
 
-    if received == 0 {
+    if reports_seen == 0 {
         println!("No 0x8110 notifications were observed; this does NOT prove that");
         println!("the physical buttons are indistinguishable on this device.");
     } else {
-        println!("Observed {received} 0x8110 reports. The bits are not yet mapped to G903 names.");
+        println!("Observed {reports_seen} 0x8110 reports. The bits are not yet mapped to G903 names.");
     }
     Ok(())
 }
@@ -146,7 +151,13 @@ mod tests {
         assert_eq!(decode_spy_bitmap(valid, true, 1, 9), None);
         assert_eq!(decode_spy_bitmap(valid, false, 7, 9), None);
         assert_eq!(decode_spy_bitmap(valid, false, 1, 8), None);
-        assert_eq!(decode_spy_bitmap(spy_report(1, 9, 1, 0x0020), false, 1, 9), None);
-        assert_eq!(decode_spy_bitmap(HidppMessage::Short([0; 6]), false, 1, 9), None);
+        assert_eq!(
+            decode_spy_bitmap(spy_report(1, 9, 1, 0x0020), false, 1, 9),
+            None
+        );
+        assert_eq!(
+            decode_spy_bitmap(HidppMessage::Short([0; 6]), false, 1, 9),
+            None
+        );
     }
 }

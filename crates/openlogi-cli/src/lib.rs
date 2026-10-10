@@ -149,8 +149,15 @@ mod tests {
     fn button_spy_timeout_is_bounded() {
         use cmd::diag::button_spy::ButtonSpyArgs;
         let cli = Cli::try_parse_from([
-            "openlogi", "diag", "button-spy", "--device", "G903", "--seconds", "45",
-        ]).expect("bounded read-only button spy command parses");
+            "openlogi",
+            "diag",
+            "button-spy",
+            "--device",
+            "G903",
+            "--seconds",
+            "45",
+        ])
+        .expect("bounded read-only button spy command parses");
         match cli.cmd.expect("diag command") {
             Command::Diag(DiagCmd::ButtonSpy(ButtonSpyArgs { device, seconds })) => {
                 assert_eq!(device.as_deref(), Some("G903"));
@@ -159,9 +166,10 @@ mod tests {
             other => panic!("expected diag button spy, got {other:?}"),
         }
         for duration in ["0", "4", "121", "9999"] {
-            assert!(Cli::try_parse_from([
-                "openlogi", "diag", "button-spy", "--seconds", duration
-            ]).is_err());
+            assert!(
+                Cli::try_parse_from(["openlogi", "diag", "button-spy", "--seconds", duration])
+                    .is_err()
+            );
         }
     }
 
