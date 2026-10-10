@@ -1000,7 +1000,7 @@ fn panel_action_rows(
         ),
         (
             PowerUserKind::Workflow,
-            "Workflow…",
+            "Create Macro…",
             "action-icons/list-checks.svg",
         ),
     ];
