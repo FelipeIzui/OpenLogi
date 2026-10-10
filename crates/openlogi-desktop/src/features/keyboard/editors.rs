@@ -271,14 +271,12 @@ fn workflow_editor_card(
             .label(candidate.label())
             .on_click(move |_e, window, cx| {
                 v.update(cx, |v, vcx| {
-                    v.set_workflow_input_kind(candidate, window, vcx)
+                    v.set_workflow_input_kind(candidate, window, vcx);
                 });
             })
     });
 
     let view_add = view.clone();
-    let view_cancel = view.clone();
-    let view_save = view.clone();
 
     compact_panel(pal)
         .w(px(320.))
@@ -333,35 +331,45 @@ fn workflow_editor_card(
                             }
                         }),
                 )
-                .child(
-                    h_flex()
-                        .gap_2()
-                        .justify_end()
-                        .child(
-                            Button::new("wf-cancel")
-                                .ghost()
-                                .label(tr!("common.cancel"))
-                                .on_click(move |_e, _window, cx| {
-                                    view_cancel.update(cx, |v, vcx| v.close_editor(vcx));
-                                }),
-                        )
-                        .child(
-                            Button::new("wf-save")
-                                .primary()
-                                .label(tr!("actions.save_workflow"))
-                                .on_click(move |_e, _window, cx| {
-                                    if !has_steps {
-                                        return;
-                                    }
-                                    let steps = view_save.read(cx).workflow_draft().to_vec();
-                                    let action = Action::Workflow(steps);
-                                    AppState::apply(cx, |state| {
-                                        commit_key_action(state, &target, Some(action))
-                                    });
-                                    view_save.update(cx, |v, vcx| v.close_editor(vcx));
-                                }),
-                        ),
-                ),
+                .child(workflow_action_row(target, has_steps, view)),
+        )
+}
+
+/// Cancel a workflow draft or save its validated steps.
+fn workflow_action_row(
+    target: KeyTarget,
+    has_steps: bool,
+    view: &Entity<FunctionRowView>,
+) -> impl IntoElement {
+    let view_cancel = view.clone();
+    let view_save = view.clone();
+
+    h_flex()
+        .gap_2()
+        .justify_end()
+        .child(
+            Button::new("wf-cancel")
+                .ghost()
+                .label(tr!("common.cancel"))
+                .on_click(move |_e, _window, cx| {
+                    view_cancel.update(cx, |v, vcx| v.close_editor(vcx));
+                }),
+        )
+        .child(
+            Button::new("wf-save")
+                .primary()
+                .label(tr!("actions.save_workflow"))
+                .on_click(move |_e, _window, cx| {
+                    if !has_steps {
+                        return;
+                    }
+                    let steps = view_save.read(cx).workflow_draft().to_vec();
+                    let action = Action::Workflow(steps);
+                    AppState::apply(cx, |state| {
+                        commit_key_action(state, &target, Some(action))
+                    });
+                    view_save.update(cx, |v, vcx| v.close_editor(vcx));
+                }),
         )
 }
 
@@ -515,8 +523,17 @@ mod tests {
             parse_workflow_input(WorkflowInputKind::Delay, "250"),
             Ok(WorkflowStep::Delay { millis: 250 })
         );
-        assert!(parse_workflow_input(WorkflowInputKind::Delay, "60001").is_err());
-        assert!(parse_workflow_input(WorkflowInputKind::Shortcut, "???").is_err());
-        assert!(parse_workflow_input(WorkflowInputKind::Text, "   ").is_err());
+        assert_eq!(
+            parse_workflow_input(WorkflowInputKind::Delay, "60001"),
+            Err("Delay must be between 1 and 60000 ms")
+        );
+        assert_eq!(
+            parse_workflow_input(WorkflowInputKind::Shortcut, "???"),
+            Err("Enter a valid shortcut, e.g. Ctrl+Shift+P")
+        );
+        assert_eq!(
+            parse_workflow_input(WorkflowInputKind::Text, "   "),
+            Err("Enter a value for this step")
+        );
     }
 }
