@@ -269,7 +269,7 @@ impl FunctionRowView {
         if let Some(input) = &self.workflow_input {
             input.update(cx, |state, cx| {
                 state.set_value(String::new(), window, cx);
-                state.set_placeholder(kind.placeholder().into(), window, cx);
+                state.set_placeholder(kind.placeholder(), window, cx);
             });
         }
         cx.notify();
@@ -290,7 +290,7 @@ impl FunctionRowView {
         if let Some(input) = &self.workflow_input {
             input.update(cx, |state, cx| {
                 state.set_value(value, window, cx);
-                state.set_placeholder(kind.placeholder().into(), window, cx);
+                state.set_placeholder(kind.placeholder(), window, cx);
             });
         }
         cx.notify();
