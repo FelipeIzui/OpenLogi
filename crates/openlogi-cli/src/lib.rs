@@ -166,10 +166,8 @@ mod tests {
             other => panic!("expected diag button spy, got {other:?}"),
         }
         for duration in ["0", "4", "121", "9999"] {
-            assert!(
-                Cli::try_parse_from(["openlogi", "diag", "button-spy", "--seconds", duration])
-                    .is_err()
-            );
+            Cli::try_parse_from(["openlogi", "diag", "button-spy", "--seconds", duration])
+                .expect_err("out-of-range duration must be rejected");
         }
     }
 
