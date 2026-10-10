@@ -365,9 +365,7 @@ fn workflow_action_row(
                     }
                     let steps = view_save.read(cx).workflow_draft().to_vec();
                     let action = Action::Workflow(steps);
-                    AppState::apply(cx, |state| {
-                        commit_key_action(state, &target, Some(action))
-                    });
+                    AppState::apply(cx, |state| commit_key_action(state, &target, Some(action)));
                     view_save.update(cx, |v, vcx| v.close_editor(vcx));
                 }),
         )
