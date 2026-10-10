@@ -35,7 +35,8 @@ use openlogi_core::binding::{Action, WorkflowStep};
 use openlogi_core::config::{KeyModifiers, KeyTrigger};
 
 use super::editors::{
-    PowerUserKind, text_editor_placeholder, text_editor_seed, workflow_editor_seed,
+    PowerUserKind, WorkflowEditorState, WorkflowInputKind, parse_workflow_input,
+    text_editor_placeholder, text_editor_seed, workflow_editor_seed, workflow_input_seed,
 };
 use crate::app::{glow_canvas, keyboard_glow};
 use crate::features::mouse::geometry::asset_dimensions_for_png;
@@ -129,6 +130,11 @@ pub struct FunctionRowView {
     text_state: Option<Entity<InputState>>,
     /// Draft copy of the Workflow steps under edit.
     workflow_draft: Vec<WorkflowStep>,
+    workflow_initialized: bool,
+    workflow_input: Option<Entity<InputState>>,
+    workflow_kind: WorkflowInputKind,
+    workflow_editing: Option<usize>,
+    workflow_error: Option<&'static str>,
     _state_obs: Subscription,
 }
 
@@ -153,6 +159,11 @@ impl FunctionRowView {
             active_editor: None,
             text_state: None,
             workflow_draft: Vec::new(),
+            workflow_initialized: false,
+            workflow_input: None,
+            workflow_kind: WorkflowInputKind::default(),
+            workflow_editing: None,
+            workflow_error: None,
             _state_obs: state_obs,
         }
     }
@@ -164,6 +175,11 @@ impl FunctionRowView {
             self.active_editor = None;
             self.text_state = None;
             self.workflow_draft.clear();
+            self.workflow_initialized = false;
+            self.workflow_input = None;
+            self.workflow_kind = WorkflowInputKind::default();
+            self.workflow_editing = None;
+            self.workflow_error = None;
         }
         self.selected_key = idx;
         cx.notify();
@@ -191,6 +207,11 @@ impl FunctionRowView {
         self.active_editor = Some(kind);
         self.text_state = None;
         self.workflow_draft.clear();
+        self.workflow_initialized = false;
+        self.workflow_input = None;
+        self.workflow_kind = WorkflowInputKind::default();
+        self.workflow_editing = None;
+        self.workflow_error = None;
         cx.notify();
     }
 
@@ -198,6 +219,11 @@ impl FunctionRowView {
         self.active_editor = None;
         self.text_state = None;
         self.workflow_draft.clear();
+        self.workflow_initialized = false;
+        self.workflow_input = None;
+        self.workflow_kind = WorkflowInputKind::default();
+        self.workflow_editing = None;
+        self.workflow_error = None;
         cx.notify();
     }
 
@@ -227,14 +253,88 @@ impl FunctionRowView {
         &self.workflow_draft
     }
 
-    pub(crate) fn push_workflow_step(&mut self, step: WorkflowStep, cx: &mut Context<Self>) {
-        self.workflow_draft.push(step);
+    pub(crate) fn workflow_input(&self) -> Option<Entity<InputState>> {
+        self.workflow_input.clone()
+    }
+
+    pub(crate) fn set_workflow_input_kind(
+        &mut self,
+        kind: WorkflowInputKind,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.workflow_kind = kind;
+        self.workflow_editing = None;
+        self.workflow_error = None;
+        if let Some(input) = &self.workflow_input {
+            input.update(cx, |state, cx| {
+                state.set_value(String::new(), window, cx);
+                state.set_placeholder(kind.placeholder().into(), window, cx);
+            });
+        }
         cx.notify();
+    }
+
+    pub(crate) fn edit_workflow_step(
+        &mut self,
+        idx: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((kind, value)) = self.workflow_draft.get(idx).and_then(workflow_input_seed) else {
+            return;
+        };
+        self.workflow_kind = kind;
+        self.workflow_editing = Some(idx);
+        self.workflow_error = None;
+        if let Some(input) = &self.workflow_input {
+            input.update(cx, |state, cx| {
+                state.set_value(value, window, cx);
+                state.set_placeholder(kind.placeholder().into(), window, cx);
+            });
+        }
+        cx.notify();
+    }
+
+    /// Commit to the draft only after successful step validation.
+    pub(crate) fn apply_workflow_input(
+        &mut self,
+        raw: &str,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let step = match parse_workflow_input(self.workflow_kind, raw) {
+            Ok(step) => step,
+            Err(message) => {
+                self.workflow_error = Some(message);
+                cx.notify();
+                return false;
+            }
+        };
+        if let Some(idx) = self.workflow_editing.take() {
+            if let Some(existing) = self.workflow_draft.get_mut(idx) {
+                *existing = step;
+            }
+        } else if self.workflow_draft.len() < 64 {
+            self.workflow_draft.push(step);
+        } else {
+            self.workflow_error = Some("Maximum of 64 steps per workflow");
+            cx.notify();
+            return false;
+        }
+        self.workflow_error = None;
+        cx.notify();
+        true
     }
 
     pub(crate) fn remove_workflow_step(&mut self, idx: usize, cx: &mut Context<Self>) {
         if idx < self.workflow_draft.len() {
             self.workflow_draft.remove(idx);
+            self.workflow_editing = match self.workflow_editing {
+                Some(editing) if editing == idx => None,
+                Some(editing) if editing > idx => Some(editing - 1),
+                other => other,
+            };
+            self.workflow_error = None;
             cx.notify();
         }
     }
@@ -284,6 +384,11 @@ impl Render for FunctionRowView {
             self.active_editor = None;
             self.text_state = None;
             self.workflow_draft.clear();
+            self.workflow_initialized = false;
+            self.workflow_input = None;
+            self.workflow_kind = WorkflowInputKind::default();
+            self.workflow_editing = None;
+            self.workflow_error = None;
         }
         let selected = self.selected_key;
         let hovered = self.hovered_key;
@@ -294,8 +399,15 @@ impl Render for FunctionRowView {
             let current_action = bindings.and_then(|bindings| bindings.get(&slot.trigger));
             match kind {
                 PowerUserKind::Workflow => {
-                    if self.workflow_draft.is_empty() {
+                    if !self.workflow_initialized {
                         self.workflow_draft = workflow_editor_seed(current_action);
+                        self.workflow_initialized = true;
+                    }
+                    if self.workflow_input.is_none() {
+                        let kind = self.workflow_kind;
+                        self.workflow_input = Some(cx.new(|cx| {
+                            InputState::new(window, cx).placeholder(kind.placeholder())
+                        }));
                     }
                 }
                 _ => {
@@ -805,7 +917,13 @@ impl FunctionRowView {
                 trigger,
                 kind,
                 self.text_state.clone(),
-                self.workflow_draft.clone(),
+                WorkflowEditorState {
+                    steps: self.workflow_draft.clone(),
+                    input: self.workflow_input.clone(),
+                    kind: self.workflow_kind,
+                    editing: self.workflow_editing,
+                    error: self.workflow_error,
+                },
                 view,
                 pal,
             );
