@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use crate::features::keyboard::editors::{
+    WorkflowInputKind, parse_workflow_input, workflow_editor_seed, workflow_input_seed,
+};
 use gpui::{
     AnyElement, App, AppContext as _, Context, ElementId, Entity, FocusHandle, Focusable, Hsla,
     InteractiveElement, IntoElement, ParentElement, Render, RenderOnce,
@@ -13,7 +16,7 @@ use gpui_component::{
     input::{InputEvent, InputState},
     v_flex,
 };
-use openlogi_core::binding::{Action, ButtonId, GestureDirection};
+use openlogi_core::binding::{Action, ButtonId, GestureDirection, WorkflowStep};
 
 use super::geometry::{
     LabelDistribution, asset_dimensions_for_png, asset_has_button_labels, asset_hotspots_for_png,
@@ -26,7 +29,7 @@ use crate::app::{glow_canvas, keyboard_glow};
 use crate::features::profiles::{friendly_app_name, profile_canvas_status};
 use crate::services::assets::{GlowGeometry, ResolvedAsset};
 use crate::state::{AppState, DeviceKey, DeviceRecord, StateEvent};
-use crate::ui::theme::{self, ACCENT_BLUE};
+use crate::ui::theme::{self, ACCENT_BLUE, Typography as _};
 
 const SIDE_GAP: f32 = 24.;
 const LABEL_W: f32 = 156.;
@@ -67,6 +70,7 @@ struct MouseWorkspaceData<'a> {
     dpi_gestures: bool,
     editing_app: Option<String>,
     overridden: Option<&'a BTreeMap<ButtonId, Action>>,
+    os_hook_only: bool,
 }
 
 impl<'a> MouseWorkspaceData<'a> {
@@ -98,6 +102,12 @@ impl<'a> MouseWorkspaceData<'a> {
                     .map_or_else(|| friendly_app_name(app), str::to_string)
             }),
             overridden: state.editing_app_overrides(),
+            os_hook_only: cfg!(target_os = "windows")
+                && state.current_record().is_some_and(|record| {
+                    record
+                        .capabilities
+                        .is_some_and(|caps| caps.pointer && !caps.buttons)
+                }),
         })
     }
 
@@ -116,8 +126,20 @@ impl<'a> MouseWorkspaceData<'a> {
             dpi_gestures: false,
             editing_app: None,
             overridden: None,
+            os_hook_only: false,
         }
     }
+}
+
+/// A mouse-side macro draft. The device config is unchanged until Save Macro.
+#[derive(Clone)]
+pub(super) struct MouseWorkflowDraft {
+    pub button: ButtonId,
+    pub steps: Vec<WorkflowStep>,
+    pub input: Entity<InputState>,
+    pub kind: WorkflowInputKind,
+    pub editing: Option<usize>,
+    pub error: Option<&'static str>,
 }
 
 /// Interactive mouse model with button hotspots.
@@ -136,6 +158,12 @@ pub struct MouseModelView {
     /// failed to parse, so its caption can show an inline error.
     pub(super) custom_shortcut_invalid: bool,
     pub(super) custom_application_invalid: bool,
+    workflow_button: Option<ButtonId>,
+    workflow_draft: Vec<WorkflowStep>,
+    workflow_input: Entity<InputState>,
+    workflow_kind: WorkflowInputKind,
+    workflow_editing: Option<usize>,
+    workflow_error: Option<&'static str>,
     _state_obs: Subscription,
 }
 
@@ -175,6 +203,16 @@ impl MouseModelView {
             },
         )
         .detach();
+        let workflow_input = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(WorkflowInputKind::Text.placeholder())
+        });
+        cx.subscribe(&workflow_input, |view, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                view.workflow_error = None;
+                cx.notify();
+            }
+        })
+        .detach();
         let state_obs = AppState::repaint_on(cx, |event| {
             matches!(
                 event,
@@ -195,6 +233,12 @@ impl MouseModelView {
             custom_application_input,
             custom_shortcut_invalid: false,
             custom_application_invalid: false,
+            workflow_button: None,
+            workflow_draft: Vec::new(),
+            workflow_input,
+            workflow_kind: WorkflowInputKind::default(),
+            workflow_editing: None,
+            workflow_error: None,
             _state_obs: state_obs,
         }
     }
@@ -239,6 +283,8 @@ impl MouseModelView {
         self.selected = None;
         self.gesture_active_dir = None;
         self.action_picker_open = false;
+        self.workflow_button = None;
+        self.workflow_draft.clear();
     }
 
     fn select(&mut self, control: MouseControlId) {
@@ -246,6 +292,120 @@ impl MouseModelView {
             self.selected = Some(control);
             self.gesture_active_dir = None;
             self.action_picker_open = false;
+            self.workflow_button = None;
+            self.workflow_draft.clear();
+        }
+    }
+
+    pub(super) fn workflow_snapshot(&self) -> Option<MouseWorkflowDraft> {
+        Some(MouseWorkflowDraft {
+            button: self.workflow_button?,
+            steps: self.workflow_draft.clone(),
+            input: self.workflow_input.clone(),
+            kind: self.workflow_kind,
+            editing: self.workflow_editing,
+            error: self.workflow_error,
+        })
+    }
+
+    pub(super) fn start_workflow(
+        &mut self,
+        button: ButtonId,
+        current: &Action,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.action_picker_open = false;
+        self.workflow_button = Some(button);
+        self.workflow_draft = workflow_editor_seed(Some(current));
+        self.workflow_kind = WorkflowInputKind::default();
+        self.workflow_editing = None;
+        self.workflow_error = None;
+        self.workflow_input.update(cx, |state, cx| {
+            state.set_value(String::new(), window, cx);
+            state.set_placeholder(self.workflow_kind.placeholder(), window, cx);
+        });
+        cx.notify();
+    }
+
+    pub(super) fn close_workflow(&mut self, cx: &mut Context<Self>) {
+        self.workflow_button = None;
+        self.workflow_draft.clear();
+        self.workflow_editing = None;
+        self.workflow_error = None;
+        cx.notify();
+    }
+
+    pub(super) fn set_workflow_kind(
+        &mut self,
+        kind: WorkflowInputKind,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.workflow_kind = kind;
+        self.workflow_editing = None;
+        self.workflow_error = None;
+        self.workflow_input.update(cx, |state, cx| {
+            state.set_value(String::new(), window, cx);
+            state.set_placeholder(kind.placeholder(), window, cx);
+        });
+        cx.notify();
+    }
+
+    pub(super) fn edit_workflow_step(
+        &mut self,
+        idx: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((kind, value)) = self.workflow_draft.get(idx).and_then(workflow_input_seed) else {
+            return;
+        };
+        self.workflow_kind = kind;
+        self.workflow_editing = Some(idx);
+        self.workflow_error = None;
+        self.workflow_input.update(cx, |state, cx| {
+            state.set_value(value, window, cx);
+            state.set_placeholder(kind.placeholder(), window, cx);
+        });
+        cx.notify();
+    }
+
+    pub(super) fn apply_workflow_step(&mut self, value: &str, cx: &mut Context<Self>) -> bool {
+        let step = match parse_workflow_input(self.workflow_kind, value) {
+            Ok(step) => step,
+            Err(error) => {
+                self.workflow_error = Some(error);
+                cx.notify();
+                return false;
+            }
+        };
+        if let Some(idx) = self.workflow_editing.take() {
+            if let Some(slot) = self.workflow_draft.get_mut(idx) {
+                *slot = step;
+            }
+        } else if self.workflow_draft.len() < 64 {
+            self.workflow_draft.push(step);
+        } else {
+            self.workflow_error = Some("Maximum of 64 steps per workflow");
+            cx.notify();
+            return false;
+        }
+        self.workflow_error = None;
+        cx.notify();
+        true
+    }
+
+    pub(super) fn remove_workflow_step(&mut self, idx: usize, cx: &mut Context<Self>) {
+        if idx < self.workflow_draft.len() {
+            self.workflow_draft.remove(idx);
+            self.workflow_editing = match self.workflow_editing {
+                Some(i) if i == idx => None,
+                Some(i) if i > idx => Some(i - 1),
+                other => other,
+            };
+            self.workflow_error = None;
+            cx.notify();
         }
     }
 }
@@ -297,6 +457,22 @@ impl MouseModelView {
     }
 }
 
+/// Only show gesture labels not replaced by a per-app button override.
+fn visible_gesture_buttons(
+    gesture_maps: &BTreeMap<ButtonId, BTreeMap<GestureDirection, Action>>,
+    editing_app: Option<&str>,
+    overridden: Option<&BTreeMap<ButtonId, Action>>,
+) -> Vec<ButtonId> {
+    gesture_maps
+        .keys()
+        .copied()
+        .filter(|button| {
+            editing_app.is_none()
+                || !overridden.is_some_and(|overrides| overrides.contains_key(button))
+        })
+        .collect()
+}
+
 impl Render for MouseModelView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.localize_action_picker_inputs(window, cx);
@@ -312,19 +488,14 @@ impl Render for MouseModelView {
             dpi_gestures,
             editing_app,
             overridden,
+            os_hook_only,
         } = MouseWorkspaceData::read(cx)
             .unwrap_or_else(|| MouseWorkspaceData::empty(&empty_bindings, &empty_gesture_maps));
 
         self.reset_for_device(device_key);
 
-        let gesture_buttons: Vec<ButtonId> = gesture_maps
-            .keys()
-            .copied()
-            .filter(|button| {
-                editing_app.is_none()
-                    || !overridden.is_some_and(|overrides| overrides.contains_key(button))
-            })
-            .collect();
+        let gesture_buttons =
+            visible_gesture_buttons(gesture_maps, editing_app.as_deref(), overridden);
 
         let viewport_h = f32::from(window.viewport_size().height);
         let viewport_w = f32::from(window.viewport_size().width);
@@ -360,26 +531,32 @@ impl Render for MouseModelView {
             self.selected,
             &view,
         );
-        let canvas = div()
-            .relative()
-            .w(px(canvas_w))
-            .h(px(canvas_h))
-            .child(breathing_art)
-            .child(leader_canvas)
-            .children(labels_outer.iter().enumerate().map(|(idx, label)| {
-                let binding = binding_label_for_control(label.id, bindings, &gesture_buttons);
-                label_control(
-                    idx,
-                    *label,
-                    binding,
-                    hovered == Some(label.id) || active == Some(label.id),
-                    model,
-                    self.selected == Some(label.id),
-                    &view,
-                )
-            }))
-            .child(hotspots_layer);
+        let canvas = if os_hook_only {
+            os_hook_button_choices(&view, self.selected, theme::palette(cx)).into_any_element()
+        } else {
+            div()
+                .relative()
+                .w(px(canvas_w))
+                .h(px(canvas_h))
+                .child(breathing_art)
+                .child(leader_canvas)
+                .children(labels_outer.iter().enumerate().map(|(idx, label)| {
+                    let binding = binding_label_for_control(label.id, bindings, &gesture_buttons);
+                    label_control(
+                        idx,
+                        *label,
+                        binding,
+                        hovered == Some(label.id) || active == Some(label.id),
+                        model,
+                        self.selected == Some(label.id),
+                        &view,
+                    )
+                }))
+                .child(hotspots_layer)
+                .into_any_element()
+        };
 
+        let workflow = self.workflow_snapshot();
         let inspector = binding_inspector(
             BindingInspectorData {
                 selected: self.selected,
@@ -398,11 +575,62 @@ impl Render for MouseModelView {
                 shortcut_invalid: self.custom_shortcut_invalid,
                 application_invalid: self.custom_application_invalid,
                 view: &view,
+                workflow: workflow.as_ref(),
             },
             cx,
         );
         workspace_layout(canvas, profile_status, inspector, &self.focus_handle)
     }
+}
+
+/// Windows' OS hook recognizes three logical mouse buttons. Multiple G-series
+/// physical buttons can produce the same XBUTTON1/XBUTTON2 event.
+fn os_hook_button_choices(
+    view: &Entity<MouseModelView>,
+    selected: Option<MouseControlId>,
+    pal: crate::ui::theme::Palette,
+) -> impl IntoElement {
+    v_flex()
+        .w_full()
+        .max_w(px(420.))
+        .gap_3()
+        .child(div().text_heading().child("Windows mouse buttons"))
+        .child(
+            div()
+                .text_caption()
+                .text_color(pal.text_muted)
+                .child("Only Windows-visible Middle / Back / Forward can be mapped here. The four physical G903 side buttons may share the same two logical Back / Forward signals. No onboard profiles are changed."),
+        )
+        .children(
+            [
+                (ButtonId::Back, "Back (XBUTTON1)"),
+                (ButtonId::Forward, "Forward (XBUTTON2)"),
+                (ButtonId::MiddleClick, "Middle click"),
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(idx, (button, label))| {
+                let observer = view.clone();
+                let active = selected == Some(MouseControlId::Button(button));
+                BaseButton::new(("windows-hook-button", idx))
+                    .debug_selector(move || format!("windows-hook-button-{button:?}"))
+                    .w_full()
+                    .cursor_pointer()
+                    .rounded(pal.control_radius)
+                    .border_1()
+                    .border_color(pal.border)
+                    .when(active, |button| button.border_color(rgb(ACCENT_BLUE)))
+                    .bg(if active { pal.control_hover } else { pal.control })
+                    .p_3()
+                    .child(div().text_body().child(label))
+                    .on_click(move |_, _, cx| {
+                        observer.update(cx, |view, cx| {
+                            view.select(MouseControlId::Button(button));
+                            cx.notify();
+                        });
+                    })
+            }),
+        )
 }
 
 fn workspace_layout(

@@ -23,7 +23,7 @@ use gpui::{
     App, Entity, FontWeight, IntoElement, ParentElement, RenderOnce, Styled, Window, div, px, svg,
 };
 use gpui_component::{
-    Icon, IconName, Sizable as _,
+    Sizable as _,
     button::{Button, ButtonVariants},
     h_flex,
     input::InputState,
@@ -48,6 +48,78 @@ impl PowerUserKind {
             Self::RunShellCommand => "actions.run_shell_command_heading",
             Self::Workflow => "actions.workflow_heading",
         }
+    }
+}
+
+/// Editable step kinds supported by the workflow composer.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) enum WorkflowInputKind {
+    #[default]
+    Text,
+    Shortcut,
+    Delay,
+}
+
+impl WorkflowInputKind {
+    pub(crate) const ALL: [Self; 3] = [Self::Text, Self::Shortcut, Self::Delay];
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Text => "Text",
+            Self::Shortcut => "Shortcut",
+            Self::Delay => "Delay",
+        }
+    }
+
+    pub(crate) fn placeholder(self) -> &'static str {
+        match self {
+            Self::Text => "Text to type",
+            Self::Shortcut => "Ctrl+Shift+P",
+            Self::Delay => "Milliseconds (1-60000)",
+        }
+    }
+}
+
+/// Local editor draft. Only committed actions are written to the config.
+pub(crate) struct WorkflowEditorState {
+    pub steps: Vec<WorkflowStep>,
+    pub input: Option<Entity<InputState>>,
+    pub kind: WorkflowInputKind,
+    pub editing: Option<usize>,
+    pub error: Option<&'static str>,
+}
+
+pub(crate) fn parse_workflow_input(
+    kind: WorkflowInputKind,
+    value: &str,
+) -> Result<WorkflowStep, &'static str> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err("Enter a value for this step");
+    }
+    match kind {
+        WorkflowInputKind::Text => Ok(WorkflowStep::TypeText(value.to_string())),
+        WorkflowInputKind::Shortcut => trimmed
+            .parse::<KeyCombo>()
+            .map(WorkflowStep::PressKey)
+            .map_err(|_| "Enter a valid shortcut, e.g. Ctrl+Shift+P"),
+        WorkflowInputKind::Delay => trimmed
+            .parse::<u64>()
+            .ok()
+            .filter(|millis| (1..=60_000).contains(millis))
+            .map(|millis| WorkflowStep::Delay { millis })
+            .ok_or("Delay must be between 1 and 60000 ms"),
+    }
+}
+
+pub(crate) fn workflow_input_seed(step: &WorkflowStep) -> Option<(WorkflowInputKind, String)> {
+    match step {
+        WorkflowStep::TypeText(text) => Some((WorkflowInputKind::Text, text.clone())),
+        WorkflowStep::PressKey(combo) => {
+            Some((WorkflowInputKind::Shortcut, combo.rendered_label()))
+        }
+        WorkflowStep::Delay { millis } => Some((WorkflowInputKind::Delay, millis.to_string())),
+        WorkflowStep::RunAppleScript(_) | WorkflowStep::RunShellCommand(_) => None,
     }
 }
 
@@ -81,12 +153,12 @@ pub fn editor_card(
     target: KeyTarget,
     kind: PowerUserKind,
     text_state: Option<Entity<InputState>>,
-    workflow_draft: Vec<WorkflowStep>,
+    workflow: WorkflowEditorState,
     view: &Entity<FunctionRowView>,
     pal: Palette,
 ) -> gpui::Div {
     match kind {
-        PowerUserKind::Workflow => workflow_editor_card(target, workflow_draft, view, pal),
+        PowerUserKind::Workflow => workflow_editor_card(target, workflow, view, pal),
         _ => match text_state {
             Some(state) => text_editor_card(target, kind, state, view, pal),
             None => compact_panel(pal)
@@ -166,15 +238,22 @@ fn editor_action_row(
         )
 }
 
-/// The Workflow editor: a list of steps with add/remove.
+/// The Workflow editor: compose text, shortcut and delay steps without TOML.
 fn workflow_editor_card(
     target: KeyTarget,
-    steps: Vec<WorkflowStep>,
+    draft: WorkflowEditorState,
     view: &Entity<FunctionRowView>,
     pal: Palette,
 ) -> gpui::Div {
     let key_name = target.label();
-
+    let WorkflowEditorState {
+        steps,
+        input,
+        kind,
+        editing,
+        error,
+    } = draft;
+    let has_steps = !steps.is_empty();
     let rows = steps
         .into_iter()
         .enumerate()
@@ -183,6 +262,21 @@ fn workflow_editor_card(
             step,
             view: view.clone(),
         });
+
+    let step_buttons = WorkflowInputKind::ALL.into_iter().map(|candidate| {
+        let v = view.clone();
+        Button::new(format!("wf-kind-{}", candidate.label()))
+            .ghost()
+            .small()
+            .label(candidate.label())
+            .on_click(move |_e, window, cx| {
+                v.update(cx, |v, vcx| {
+                    v.set_workflow_input_kind(candidate, window, vcx);
+                });
+            })
+    });
+
+    let view_add = view.clone();
 
     compact_panel(pal)
         .w(px(320.))
@@ -193,43 +287,87 @@ fn workflow_editor_card(
         .child(divider(pal))
         .child(editor_scroll_list("workflow-steps", rows))
         .child(
-            h_flex()
+            v_flex()
                 .p_2()
                 .gap_2()
-                .justify_between()
+                .child(h_flex().gap_1().children(step_buttons))
+                .child(
+                    div()
+                        .text_caption()
+                        .text_color(pal.text_muted)
+                        .child(format!(
+                            "{} {}",
+                            if editing.is_some() { "Edit" } else { "New" },
+                            kind.label()
+                        )),
+                )
+                .children(input.map(|input| control_input(&input).cleanable(true)))
+                .children(error.map(|message| {
+                    div()
+                        .text_caption()
+                        .text_color(pal.text_muted)
+                        .child(message)
+                }))
                 .child(
                     Button::new("wf-add-step")
                         .ghost()
                         .small()
-                        .label(tr!("actions.add_workflow_step"))
-                        .on_click({
-                            let v = view.clone();
-                            move |_e, _w, cx| {
-                                v.update(cx, |v, vcx| {
-                                    v.push_workflow_step(
-                                        WorkflowStep::TypeText(String::new()),
-                                        vcx,
-                                    );
-                                });
+                        .label(if editing.is_some() {
+                            "Update step"
+                        } else {
+                            "Add step"
+                        })
+                        .on_click(move |_e, window, cx| {
+                            let input = view_add.read(cx).workflow_input();
+                            if let Some(input) = input {
+                                let value = input.read(cx).value().to_string();
+                                let success = view_add
+                                    .update(cx, |v, vcx| v.apply_workflow_input(&value, vcx));
+                                if success {
+                                    input.update(cx, |state, cx| {
+                                        state.set_value(String::new(), window, cx);
+                                    });
+                                }
                             }
                         }),
                 )
-                .child(
-                    Button::new("wf-save")
-                        .primary()
-                        .label(tr!("actions.save_workflow"))
-                        .on_click({
-                            let v = view.clone();
-                            move |_e, _window, cx| {
-                                let steps = v.read(cx).workflow_draft().to_vec();
-                                let action = Action::Workflow(steps);
-                                AppState::apply(cx, |state| {
-                                    commit_key_action(state, &target, Some(action))
-                                });
-                                v.update(cx, |v, vcx| v.close_editor(vcx));
-                            }
-                        }),
-                ),
+                .child(workflow_action_row(target, has_steps, view)),
+        )
+}
+
+/// Cancel a workflow draft or save its validated steps.
+fn workflow_action_row(
+    target: KeyTarget,
+    has_steps: bool,
+    view: &Entity<FunctionRowView>,
+) -> impl IntoElement {
+    let view_cancel = view.clone();
+    let view_save = view.clone();
+
+    h_flex()
+        .gap_2()
+        .justify_end()
+        .child(
+            Button::new("wf-cancel")
+                .ghost()
+                .label(tr!("common.cancel"))
+                .on_click(move |_e, _window, cx| {
+                    view_cancel.update(cx, |v, vcx| v.close_editor(vcx));
+                }),
+        )
+        .child(
+            Button::new("wf-save")
+                .primary()
+                .label(tr!("actions.save_workflow"))
+                .on_click(move |_e, _window, cx| {
+                    if !has_steps {
+                        return;
+                    }
+                    let steps = view_save.read(cx).workflow_draft().to_vec();
+                    let action = Action::Workflow(steps);
+                    AppState::apply(cx, |state| commit_key_action(state, &target, Some(action)));
+                    view_save.update(cx, |v, vcx| v.close_editor(vcx));
+                }),
         )
 }
 
@@ -251,38 +389,53 @@ impl RenderOnce for WorkflowStepRow {
             WorkflowStep::RunShellCommand(_) => ("Shell", "action-icons/terminal.svg"),
         };
         let pal = theme::palette(cx);
+        let view_edit = self.view.clone();
         let view_remove = self.view;
+        let idx = self.idx;
 
-        MenuRow::new(("wf-step", self.idx))
+        h_flex()
+            .w_full()
+            .gap_1()
             .child(
-                h_flex()
-                    .w_full()
-                    .items_center()
-                    .gap_2()
-                    .child(
-                        svg()
-                            .path(glyph)
-                            .size_4()
-                            .flex_none()
-                            .text_color(pal.text_muted),
-                    )
-                    .child(
-                        div()
-                            .text_caption()
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(pal.text_muted)
-                            .child(type_label),
-                    )
-                    .child(div().flex_1().child(step_preview(&self.step, pal))),
+                div().flex_1().min_w_0().child(
+                    MenuRow::new(("wf-step", idx))
+                        .child(
+                            h_flex()
+                                .w_full()
+                                .items_center()
+                                .gap_2()
+                                .child(
+                                    svg()
+                                        .path(glyph)
+                                        .size_4()
+                                        .flex_none()
+                                        .text_color(pal.text_muted),
+                                )
+                                .child(
+                                    div()
+                                        .text_caption()
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .text_color(pal.text_muted)
+                                        .child(type_label),
+                                )
+                                .child(div().flex_1().child(step_preview(&self.step, pal))),
+                        )
+                        .on_click(move |_e, window, cx| {
+                            view_edit.update(cx, |v, vcx| {
+                                v.edit_workflow_step(idx, window, vcx);
+                            });
+                        }),
+                ),
             )
             .child(
-                Icon::new(IconName::Close)
-                    .size_3()
-                    .text_color(pal.text_muted),
+                Button::new(("wf-remove", idx))
+                    .ghost()
+                    .small()
+                    .label("Remove")
+                    .on_click(move |_e, _window, cx| {
+                        view_remove.update(cx, |v, vcx| v.remove_workflow_step(idx, vcx));
+                    }),
             )
-            .on_click(move |_e, _w, cx| {
-                view_remove.update(cx, |v, vcx| v.remove_workflow_step(self.idx, vcx));
-            })
     }
 }
 
@@ -351,6 +504,34 @@ mod tests {
                 "display dialog \"Hello\"".into()
             )))
             .is_empty()
+        );
+    }
+    #[test]
+    fn workflow_composer_parses_text_shortcuts_and_delays() {
+        assert_eq!(
+            parse_workflow_input(WorkflowInputKind::Text, "á 😊"),
+            Ok(WorkflowStep::TypeText("á 😊".into()))
+        );
+        assert_eq!(
+            parse_workflow_input(WorkflowInputKind::Shortcut, "Ctrl+Shift+P")
+                .expect("valid shortcut"),
+            WorkflowStep::PressKey("Ctrl+Shift+P".parse().expect("valid key combo"))
+        );
+        assert_eq!(
+            parse_workflow_input(WorkflowInputKind::Delay, "250"),
+            Ok(WorkflowStep::Delay { millis: 250 })
+        );
+        assert_eq!(
+            parse_workflow_input(WorkflowInputKind::Delay, "60001"),
+            Err("Delay must be between 1 and 60000 ms")
+        );
+        assert_eq!(
+            parse_workflow_input(WorkflowInputKind::Shortcut, "???"),
+            Err("Enter a valid shortcut, e.g. Ctrl+Shift+P")
+        );
+        assert_eq!(
+            parse_workflow_input(WorkflowInputKind::Text, "   "),
+            Err("Enter a value for this step")
         );
     }
 }

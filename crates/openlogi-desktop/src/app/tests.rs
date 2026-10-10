@@ -422,6 +422,28 @@ fn tabs_prefer_buttons_when_a_keyboard_kind_measures_a_pointer() {
     );
 }
 
+/// G903 HERO exposes DPI+RGB but no HID++ ReprogControls (0x1bxx).
+/// Only Windows' native Middle/Back/Forward OS events may be bound without
+/// adding support for the G-series onboard-profile protocol.
+#[test]
+fn g903_without_reprog_shows_only_windows_mouse_hook_buttons() {
+    let caps = Some(Capabilities {
+        buttons: false,
+        pointer: true,
+        lighting: true,
+        ..Capabilities::default()
+    });
+    let tabs = DetailTab::tabs_for(&record(DeviceKind::Mouse, caps));
+    assert_eq!(
+        tabs.contains(&DetailTab::Buttons),
+        cfg!(target_os = "windows")
+    );
+    assert!(!tabs.contains(&DetailTab::ActionsRing));
+    assert!(tabs.contains(&DetailTab::Pointer));
+    assert!(tabs.contains(&DetailTab::Lighting));
+    assert!(!tabs.contains(&DetailTab::Keys));
+}
+
 /// Tabs follow measured capabilities, not kind — the core of the #127 fix.
 /// A device the Bolt register mislabels as Keyboard but whose 0x0005 probe
 /// returns Mouse ends up with kind=Mouse; measured caps drive the tabs.

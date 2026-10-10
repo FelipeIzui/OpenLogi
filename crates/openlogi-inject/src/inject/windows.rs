@@ -5,10 +5,10 @@ use std::mem::size_of;
 use std::sync::{LazyLock, Mutex};
 
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_KEYUP, MOUSEEVENTF_HWHEEL,
-    MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP,
-    MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_WHEEL, MOUSEEVENTF_XDOWN,
-    MOUSEEVENTF_XUP, MOUSEINPUT, SendInput,
+    INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE,
+    MOUSEEVENTF_HWHEEL, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN,
+    MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_WHEEL,
+    MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP, MOUSEINPUT, SendInput,
 };
 
 use openlogi_core::binding::{
@@ -150,12 +150,28 @@ fn dispatch_media(key: MediaKey) {
     }
 }
 
-/// Not implemented yet: SendInput's KEYEVENTF_UNICODE path is unwired.
+/// Type Unicode characters as UTF-16 scan codes with balanced down/up edges.
+///
+/// `KEYEVENTF_UNICODE` avoids keyboard-layout-dependent virtual-key mappings.
+/// Keep surrogate pairs together within each SendInput batch.
 pub(super) fn type_text(text: &str) {
-    tracing::warn!(
-        chars = text.chars().count(),
-        "TypeText injection is not implemented on Windows yet"
-    );
+    const MAX_EVENTS_PER_BATCH: usize = 512;
+    let mut events = Vec::with_capacity(MAX_EVENTS_PER_BATCH);
+    for character in text.chars() {
+        let event_count = character.len_utf16() * 2;
+        if events.len() + event_count > MAX_EVENTS_PER_BATCH {
+            send_inputs(&events);
+            events.clear();
+        }
+        let mut buffer = [0u16; 2];
+        for &unit in character.encode_utf16(&mut buffer).iter() {
+            events.push(unicode_key_input(unit, false));
+            events.push(unicode_key_input(unit, true));
+        }
+    }
+    if !events.is_empty() {
+        send_inputs(&events);
+    }
 }
 
 pub(super) fn run_apple_script(_src: &str) {
@@ -339,6 +355,26 @@ fn key_input(vk: u16, key_up: bool) -> INPUT {
     }
 }
 
+fn unicode_key_input(unit: u16, key_up: bool) -> INPUT {
+    let flags = if key_up {
+        KEYEVENTF_UNICODE | KEYEVENTF_KEYUP
+    } else {
+        KEYEVENTF_UNICODE
+    };
+    INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: 0,
+                wScan: unit,
+                dwFlags: flags,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    }
+}
+
 fn mouse_input(flags: u32, data: i32) -> INPUT {
     INPUT {
         r#type: INPUT_MOUSE,
@@ -359,7 +395,27 @@ fn mouse_input(flags: u32, data: i32) -> INPUT {
 mod tests {
     use openlogi_core::binding::Shortcut;
 
-    use super::{VK_BROWSER_BACK, VK_BROWSER_FORWARD, combo};
+    use super::{VK_BROWSER_BACK, VK_BROWSER_FORWARD, combo, unicode_key_input};
+
+    #[test]
+    fn unicode_keys_have_balanced_utf16_scan_codes() {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+            INPUT_KEYBOARD, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE,
+        };
+        for unit in "á😊".encode_utf16() {
+            let down = unicode_key_input(unit, false);
+            let up = unicode_key_input(unit, true);
+            assert_eq!(down.r#type, INPUT_KEYBOARD);
+            assert_eq!(up.r#type, INPUT_KEYBOARD);
+            // SAFETY: unicode_key_input sets INPUT_KEYBOARD and initializes the ki union arm.
+            let (down_key, up_key) = unsafe { (down.Anonymous.ki, up.Anonymous.ki) };
+            assert_eq!(down_key.wVk, 0);
+            assert_eq!(down_key.wScan, unit);
+            assert_eq!(down_key.dwFlags, KEYEVENTF_UNICODE);
+            assert_eq!(up_key.wScan, unit);
+            assert_eq!(up_key.dwFlags, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP);
+        }
+    }
 
     /// Pin a handful of representative `Shortcut -> KeyCombo` rows so an
     /// edit to the table can't silently change what Ctrl+C sends.

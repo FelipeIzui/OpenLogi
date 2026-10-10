@@ -216,6 +216,7 @@ fn a_selected_gesture_can_render_in_the_binding_inspector(cx: &mut TestAppContex
                 shortcut_invalid: view.custom_shortcut_invalid,
                 application_invalid: view.custom_application_invalid,
                 view: &entity,
+                workflow: None,
             },
             cx,
         );

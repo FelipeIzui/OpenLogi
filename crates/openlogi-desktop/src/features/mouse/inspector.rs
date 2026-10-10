@@ -3,20 +3,25 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
+use crate::features::keyboard::editors::WorkflowInputKind;
 use gpui::{
     Context, Entity, InteractiveElement, IntoElement, ParentElement, Role,
     StatefulInteractiveElement as _, Styled, div, prelude::FluentBuilder as _, px, rgb, svg,
 };
 use gpui_base::Button as BaseButton;
 use gpui_component::{
-    Disableable as _, Icon, IconName, Selectable as _, Sizable as _, button::Button, h_flex,
-    input::InputState, scroll::ScrollableElement as _, v_flex,
+    Disableable as _, Icon, IconName, Selectable as _, Sizable as _,
+    button::{Button, ButtonVariants as _},
+    h_flex,
+    input::InputState,
+    scroll::ScrollableElement as _,
+    v_flex,
 };
-use openlogi_core::binding::{Action, ButtonId, GestureDirection, default_binding};
+use openlogi_core::binding::{Action, ButtonId, GestureDirection, WorkflowStep, default_binding};
 
 use super::hotspots::MouseControlId;
 use super::thumbwheel::ThumbwheelPreset;
-use super::view::MouseModelView;
+use super::view::{MouseModelView, MouseWorkflowDraft};
 use crate::features::binding_editor::{
     GESTURE_BUTTON_ICON, PickFn, action_icon_path, action_rows_matching, editor_section,
     gesture_direction_icon,
@@ -48,6 +53,7 @@ pub(super) struct ActionPickerContext<'a> {
     pub shortcut_invalid: bool,
     pub application_invalid: bool,
     pub view: &'a Entity<MouseModelView>,
+    pub workflow: Option<&'a MouseWorkflowDraft>,
 }
 
 pub(super) fn binding_inspector(
@@ -56,20 +62,26 @@ pub(super) fn binding_inspector(
     cx: &Context<MouseModelView>,
 ) -> gpui::Div {
     let pal = theme::palette(cx);
-    let body = match data.selected {
-        None => empty_inspector(
-            data.editing_app,
-            data.overridden.map_or(0, BTreeMap::len),
-            pal,
-        ),
-        Some(MouseControlId::ThumbwheelRotation) => thumbwheel_inspector(
-            data.bindings,
-            data.editing_app,
-            data.overridden,
-            picker,
-            pal,
-        ),
-        Some(MouseControlId::Button(button)) => button_inspector(button, &data, picker, pal, cx),
+    let body = if let Some(draft) = picker.workflow {
+        mouse_workflow_editor(draft, picker.view, pal)
+    } else {
+        match data.selected {
+            None => empty_inspector(
+                data.editing_app,
+                data.overridden.map_or(0, BTreeMap::len),
+                pal,
+            ),
+            Some(MouseControlId::ThumbwheelRotation) => thumbwheel_inspector(
+                data.bindings,
+                data.editing_app,
+                data.overridden,
+                picker,
+                pal,
+            ),
+            Some(MouseControlId::Button(button)) => {
+                button_inspector(button, &data, picker, pal, cx)
+            }
+        }
     };
 
     v_flex()
@@ -173,6 +185,7 @@ fn button_inspector(
             pal,
         ))
         .child(current_action_card(&action, picker, pal))
+        .child(mouse_create_macro_button(button, &action, picker.view))
         .when(overridden, |panel| {
             let observer = picker.view.clone();
             panel.child(
@@ -225,6 +238,30 @@ fn button_inspector(
                 pal,
                 cx,
             ))
+        })
+}
+
+/// Expose the shared workflow composer from an existing mouse binding.
+fn mouse_create_macro_button(
+    button: ButtonId,
+    action: &Action,
+    view: &Entity<MouseModelView>,
+) -> impl IntoElement {
+    let observer = view.clone();
+    let seed = action.clone();
+    let label = if matches!(action, Action::Workflow(_)) {
+        "Edit Macro…"
+    } else {
+        "Create Macro…"
+    };
+    Button::new("mouse-create-macro")
+        .outline()
+        .w_full()
+        .label(label)
+        .on_click(move |_, window, cx| {
+            observer.update(cx, |view, cx| {
+                view.start_workflow(button, &seed, window, cx);
+            });
         })
 }
 
@@ -803,6 +840,163 @@ fn custom_application_editor(
                     .child(tr!("action_ring.custom_action_invalid_input")),
             )
         })
+}
+
+/// Compose and save a keyboard/Unicode workflow for a host-visible mouse button.
+fn mouse_workflow_editor(
+    draft: &MouseWorkflowDraft,
+    view: &Entity<MouseModelView>,
+    pal: Palette,
+) -> gpui::Div {
+    let button = draft.button;
+    let kind = draft.kind;
+    let editing = draft.editing;
+    let error = draft.error;
+    let input = draft.input.clone();
+    let can_save = !draft.steps.is_empty();
+    let set_kind = view.clone();
+    let add_step = view.clone();
+
+    v_flex()
+        .gap_3()
+        .child(inspector_heading(
+            "Mouse macro".into(),
+            Some(tr!(button.translation_key())),
+            pal,
+        ))
+        .child(
+            div()
+                .text_caption()
+                .text_color(pal.text_muted)
+                .child("Pressing this Windows-visible button will execute the steps in order."),
+        )
+        .children(
+            draft
+                .steps
+                .iter()
+                .enumerate()
+                .map(|(idx, step)| mouse_workflow_step_row(idx, step, view)),
+        )
+        .child(
+            h_flex()
+                .gap_1()
+                .children(WorkflowInputKind::ALL.into_iter().map(move |candidate| {
+                    let v = set_kind.clone();
+                    Button::new(format!("mouse-macro-kind-{}", candidate.label()))
+                        .small()
+                        .ghost()
+                        .selected(kind == candidate)
+                        .label(candidate.label())
+                        .on_click(move |_, window, cx| {
+                            v.update(cx, |view, cx| view.set_workflow_kind(candidate, window, cx));
+                        })
+                })),
+        )
+        .child(control_input(&input).cleanable(true))
+        .children(error.map(|error| {
+            div()
+                .text_caption()
+                .text_color(rgb(0x00ef_4444))
+                .child(error)
+        }))
+        .child(
+            Button::new("mouse-macro-add-step")
+                .outline()
+                .label(if editing.is_some() {
+                    "Update step"
+                } else {
+                    "Add step"
+                })
+                .on_click(move |_, window, cx| {
+                    let value = input.read(cx).value().to_string();
+                    let valid =
+                        add_step.update(cx, |view, cx| view.apply_workflow_step(&value, cx));
+                    if valid {
+                        input.update(cx, |state, cx| state.set_value(String::new(), window, cx));
+                    }
+                }),
+        )
+        .child(mouse_workflow_actions(button, can_save, view))
+}
+
+fn mouse_workflow_step_label(step: &WorkflowStep) -> String {
+    match step {
+        WorkflowStep::TypeText(text) => {
+            format!("Text: {}", text.chars().take(40).collect::<String>())
+        }
+        WorkflowStep::PressKey(combo) => format!("Shortcut: {}", combo.rendered_label()),
+        WorkflowStep::Delay { millis } => format!("Delay: {millis} ms"),
+        WorkflowStep::RunAppleScript(_) => "AppleScript (legacy step)".into(),
+        WorkflowStep::RunShellCommand(_) => "Shell command (legacy step)".into(),
+    }
+}
+
+fn mouse_workflow_step_row(
+    idx: usize,
+    step: &WorkflowStep,
+    view: &Entity<MouseModelView>,
+) -> impl IntoElement {
+    let label = mouse_workflow_step_label(step);
+    let edit = view.clone();
+    let remove = view.clone();
+    h_flex()
+        .gap_1()
+        .child(
+            Button::new(("mouse-macro-edit-step", idx))
+                .ghost()
+                .flex_1()
+                .label(label)
+                .on_click(move |_, window, cx| {
+                    edit.update(cx, |view, cx| view.edit_workflow_step(idx, window, cx));
+                }),
+        )
+        .child(
+            Button::new(("mouse-macro-remove-step", idx))
+                .ghost()
+                .small()
+                .label("Remove")
+                .on_click(move |_, _, cx| {
+                    remove.update(cx, |view, cx| view.remove_workflow_step(idx, cx));
+                }),
+        )
+}
+
+fn mouse_workflow_actions(
+    button: ButtonId,
+    can_save: bool,
+    view: &Entity<MouseModelView>,
+) -> impl IntoElement {
+    let cancel = view.clone();
+    let save = view.clone();
+    h_flex()
+        .gap_2()
+        .justify_end()
+        .child(
+            Button::new("mouse-macro-cancel")
+                .ghost()
+                .label(tr!("common.cancel"))
+                .on_click(move |_, _, cx| {
+                    cancel.update(cx, MouseModelView::close_workflow);
+                }),
+        )
+        .child(
+            Button::new("mouse-macro-save")
+                .primary()
+                .disabled(!can_save)
+                .label("Save Macro")
+                .on_click(move |_, _, cx| {
+                    let Some(draft) = save.read(cx).workflow_snapshot() else {
+                        return;
+                    };
+                    if draft.button != button || draft.steps.is_empty() {
+                        return;
+                    }
+                    AppState::apply(cx, |state| {
+                        state.commit_binding(button, Action::Workflow(draft.steps))
+                    });
+                    save.update(cx, MouseModelView::close_workflow);
+                }),
+        )
 }
 
 fn gesture_action(
