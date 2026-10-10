@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use crate::features::keyboard::editors::{
+    WorkflowInputKind, parse_workflow_input, workflow_editor_seed, workflow_input_seed,
+};
 use gpui::{
     AnyElement, App, AppContext as _, Context, ElementId, Entity, FocusHandle, Focusable, Hsla,
     InteractiveElement, IntoElement, ParentElement, Render, RenderOnce,
@@ -14,9 +17,6 @@ use gpui_component::{
     v_flex,
 };
 use openlogi_core::binding::{Action, ButtonId, GestureDirection, WorkflowStep};
-use crate::features::keyboard::editors::{
-    WorkflowInputKind, parse_workflow_input, workflow_editor_seed, workflow_input_seed,
-};
 
 use super::geometry::{
     LabelDistribution, asset_dimensions_for_png, asset_has_button_labels, asset_hotspots_for_png,
@@ -29,7 +29,7 @@ use crate::app::{glow_canvas, keyboard_glow};
 use crate::features::profiles::{friendly_app_name, profile_canvas_status};
 use crate::services::assets::{GlowGeometry, ResolvedAsset};
 use crate::state::{AppState, DeviceKey, DeviceRecord, StateEvent};
-use crate::ui::theme::{self, ACCENT_BLUE};
+use crate::ui::theme::{self, ACCENT_BLUE, Typography as _};
 
 const SIDE_GAP: f32 = 24.;
 const LABEL_W: f32 = 156.;
@@ -104,7 +104,9 @@ impl<'a> MouseWorkspaceData<'a> {
             overridden: state.editing_app_overrides(),
             os_hook_only: cfg!(target_os = "windows")
                 && state.current_record().is_some_and(|record| {
-                    record.capabilities.is_some_and(|caps| caps.pointer && !caps.buttons)
+                    record
+                        .capabilities
+                        .is_some_and(|caps| caps.pointer && !caps.buttons)
                 }),
         })
     }
@@ -544,6 +546,7 @@ impl Render for MouseModelView {
                 .into_any_element()
         };
 
+        let workflow = self.workflow_snapshot();
         let inspector = binding_inspector(
             BindingInspectorData {
                 selected: self.selected,
@@ -562,6 +565,7 @@ impl Render for MouseModelView {
                 shortcut_invalid: self.custom_shortcut_invalid,
                 application_invalid: self.custom_application_invalid,
                 view: &view,
+                workflow: workflow.as_ref(),
             },
             cx,
         );
@@ -604,7 +608,8 @@ fn os_hook_button_choices(
                     .cursor_pointer()
                     .rounded(pal.control_radius)
                     .border_1()
-                    .border_color(if active { rgb(ACCENT_BLUE) } else { pal.border })
+                    .border_color(pal.border)
+                    .when(active, |button| button.border_color(rgb(ACCENT_BLUE)))
                     .bg(if active { pal.control_hover } else { pal.control })
                     .p_3()
                     .child(div().text_body().child(label))

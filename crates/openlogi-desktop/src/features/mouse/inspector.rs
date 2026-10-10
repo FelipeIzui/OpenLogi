@@ -3,17 +3,18 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
+use crate::features::keyboard::editors::WorkflowInputKind;
 use gpui::{
     Context, Entity, InteractiveElement, IntoElement, ParentElement, Role,
     StatefulInteractiveElement as _, Styled, div, prelude::FluentBuilder as _, px, rgb, svg,
 };
 use gpui_base::Button as BaseButton;
 use gpui_component::{
-    Disableable as _, Icon, IconName, Selectable as _, Sizable as _, button::Button, h_flex,
+    Disableable as _, Icon, IconName, Selectable as _, Sizable as _,
+    button::{Button, ButtonVariants as _}, h_flex,
     input::InputState, scroll::ScrollableElement as _, v_flex,
 };
 use openlogi_core::binding::{Action, ButtonId, GestureDirection, WorkflowStep, default_binding};
-use crate::features::keyboard::editors::WorkflowInputKind;
 
 use super::hotspots::MouseControlId;
 use super::thumbwheel::ThumbwheelPreset;
@@ -49,6 +50,7 @@ pub(super) struct ActionPickerContext<'a> {
     pub shortcut_invalid: bool,
     pub application_invalid: bool,
     pub view: &'a Entity<MouseModelView>,
+    pub workflow: Option<&'a MouseWorkflowDraft>,
 }
 
 pub(super) fn binding_inspector(
@@ -57,24 +59,26 @@ pub(super) fn binding_inspector(
     cx: &Context<MouseModelView>,
 ) -> gpui::Div {
     let pal = theme::palette(cx);
-    let workflow = picker.view.read(cx).workflow_snapshot();
+    let workflow = picker.workflow.cloned();
     let body = if let Some(draft) = workflow {
         mouse_workflow_editor(draft, picker.view, pal)
     } else {
         match data.selected {
-        None => empty_inspector(
-            data.editing_app,
-            data.overridden.map_or(0, BTreeMap::len),
-            pal,
-        ),
-        Some(MouseControlId::ThumbwheelRotation) => thumbwheel_inspector(
-            data.bindings,
-            data.editing_app,
-            data.overridden,
-            picker,
-            pal,
-        ),
-        Some(MouseControlId::Button(button)) => button_inspector(button, &data, picker, pal, cx),
+            None => empty_inspector(
+                data.editing_app,
+                data.overridden.map_or(0, BTreeMap::len),
+                pal,
+            ),
+            Some(MouseControlId::ThumbwheelRotation) => thumbwheel_inspector(
+                data.bindings,
+                data.editing_app,
+                data.overridden,
+                picker,
+                pal,
+            ),
+            Some(MouseControlId::Button(button)) => {
+                button_inspector(button, &data, picker, pal, cx)
+            }
         }
     };
 
@@ -845,40 +849,58 @@ fn mouse_workflow_editor(
 
     v_flex()
         .gap_3()
-        .child(inspector_heading("Mouse macro".into(), Some(tr!(button.translation_key())), pal))
+        .child(inspector_heading(
+            "Mouse macro".into(),
+            Some(tr!(button.translation_key())),
+            pal,
+        ))
         .child(
             div()
                 .text_caption()
                 .text_color(pal.text_muted)
                 .child("Pressing this Windows-visible button will execute the steps in order."),
         )
-        .children(draft.steps.into_iter().enumerate().map(|(idx, step)| {
-            mouse_workflow_step_row(idx, step, view)
-        }))
+        .children(
+            draft
+                .steps
+                .into_iter()
+                .enumerate()
+                .map(|(idx, step)| mouse_workflow_step_row(idx, step, view)),
+        )
         .child(
-            h_flex().gap_1().children(WorkflowInputKind::ALL.into_iter().map(move |candidate| {
-                let v = set_kind.clone();
-                Button::new(format!("mouse-macro-kind-{}", candidate.label()))
-                    .small()
-                    .ghost()
-                    .selected(kind == candidate)
-                    .label(candidate.label())
-                    .on_click(move |_, window, cx| {
-                        v.update(cx, |view, cx| view.set_workflow_kind(candidate, window, cx));
-                    })
-            })),
+            h_flex()
+                .gap_1()
+                .children(WorkflowInputKind::ALL.into_iter().map(move |candidate| {
+                    let v = set_kind.clone();
+                    Button::new(format!("mouse-macro-kind-{}", candidate.label()))
+                        .small()
+                        .ghost()
+                        .selected(kind == candidate)
+                        .label(candidate.label())
+                        .on_click(move |_, window, cx| {
+                            v.update(cx, |view, cx| view.set_workflow_kind(candidate, window, cx));
+                        })
+                })),
         )
         .child(control_input(&input).cleanable(true))
         .children(error.map(|error| {
-            div().text_caption().text_color(rgb(0x00ef_4444)).child(error)
+            div()
+                .text_caption()
+                .text_color(rgb(0x00ef_4444))
+                .child(error)
         }))
         .child(
             Button::new("mouse-macro-add-step")
                 .outline()
-                .label(if editing.is_some() { "Update step" } else { "Add step" })
+                .label(if editing.is_some() {
+                    "Update step"
+                } else {
+                    "Add step"
+                })
                 .on_click(move |_, window, cx| {
                     let value = input.read(cx).value().to_string();
-                    let valid = add_step.update(cx, |view, cx| view.apply_workflow_step(&value, cx));
+                    let valid =
+                        add_step.update(cx, |view, cx| view.apply_workflow_step(&value, cx));
                     if valid {
                         input.update(cx, |state, cx| state.set_value(String::new(), window, cx));
                     }
@@ -889,7 +911,9 @@ fn mouse_workflow_editor(
 
 fn mouse_workflow_step_label(step: &WorkflowStep) -> String {
     match step {
-        WorkflowStep::TypeText(text) => format!("Text: {}", text.chars().take(40).collect::<String>()),
+        WorkflowStep::TypeText(text) => {
+            format!("Text: {}", text.chars().take(40).collect::<String>())
+        }
         WorkflowStep::PressKey(combo) => format!("Shortcut: {}", combo.rendered_label()),
         WorkflowStep::Delay { millis } => format!("Delay: {millis} ms"),
         WorkflowStep::RunAppleScript(_) => "AppleScript (legacy step)".into(),
