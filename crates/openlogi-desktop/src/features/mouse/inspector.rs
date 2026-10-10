@@ -11,8 +11,11 @@ use gpui::{
 use gpui_base::Button as BaseButton;
 use gpui_component::{
     Disableable as _, Icon, IconName, Selectable as _, Sizable as _,
-    button::{Button, ButtonVariants as _}, h_flex,
-    input::InputState, scroll::ScrollableElement as _, v_flex,
+    button::{Button, ButtonVariants as _},
+    h_flex,
+    input::InputState,
+    scroll::ScrollableElement as _,
+    v_flex,
 };
 use openlogi_core::binding::{Action, ButtonId, GestureDirection, WorkflowStep, default_binding};
 
