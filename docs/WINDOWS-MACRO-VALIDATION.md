@@ -104,3 +104,12 @@ the UI to show connected devices.
 - The PR is explicitly reviewed before being marked ready or merged.
 
 Keep the PR as a draft until these criteria are evidenced.
+
+## Windows G903 OS-hook fallback (next build — pending CI)
+
+- G903 HERO on LIGHTSPEED receiver `046d:c53a` reports `buttons=no`, `pointer=yes`, `lighting=yes`, has `0x8100` / `0x8110` but no `0x1bxx`.
+- When the device supports pointer input but lacks HID++ ReprogControls, the Windows Buttons tab exposes only **logical Middle / Back / Forward** OS-hook events, not all G-series hardware buttons. Four physical side buttons may map to the same two Windows XBUTTON IDs.
+- Select a logical button, click **Create Macro…**, enter Text/Shortcut/Delay steps, save, and test in Notepad.
+- Confirm that different physical buttons sharing an XBUTTON ID trigger the same macro; do **not** claim independent control until the G-series protocol is implemented.
+- Cancel and invalid inputs must never write to the device config. No G903 onboard profile or mouse-button filter writes are made.
+- Build/test status unverified for this iteration until a CI run completes.

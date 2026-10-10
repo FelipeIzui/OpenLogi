@@ -122,7 +122,12 @@ impl DetailTab {
         if matches!(record.kind, DeviceKind::Camera) {
             tabs.push(Self::Camera);
         }
-        if caps.buttons && can_show_mouse_model {
+        // Windows can remap standard middle/back/forward OS mouse events even
+        // when the firmware does not advertise HID++ ReprogControls (0x1bxx).
+        // The Buttons workspace then exposes ONLY those OS-visible controls;
+        // it does not claim access to G-series onboard or extra buttons.
+        let windows_hook_buttons = cfg!(target_os = "windows") && caps.pointer && can_show_mouse_model;
+        if (caps.buttons || windows_hook_buttons) && can_show_mouse_model {
             tabs.push(Self::Buttons);
         }
         if caps.haptic_panel || (caps.buttons && can_show_mouse_model) {
