@@ -17,6 +17,7 @@ pub mod controls;
 pub mod dpi;
 pub mod features;
 pub mod lighting;
+pub mod onboard_profile_info;
 pub mod pointer_speed;
 pub mod smartshift;
 pub mod wheel;
@@ -29,6 +30,8 @@ pub enum DiagCmd {
     Controls(controls::ControlsArgs),
     /// Passively observe 0x8110 button-bitmap notifications (no device writes).
     ButtonSpy(button_spy::ButtonSpyArgs),
+    /// Read 0x8100 onboard-profile metadata without reading or changing profiles.
+    ProfileInfo(onboard_profile_info::ProfileInfoArgs),
     /// Read the raw battery report (0x1004, 0x1000, or 0x1F20 fields).
     Battery(battery::BatteryArgs),
     /// Read DPI → write a small delta → read back → restore → report.
@@ -52,6 +55,7 @@ impl DiagCmd {
             Self::Features(args) => features::run(args).await,
             Self::Controls(args) => controls::run(args).await,
             Self::ButtonSpy(args) => button_spy::run(args).await,
+            Self::ProfileInfo(args) => onboard_profile_info::run(args).await,
             Self::Battery(args) => battery::run(args).await,
             Self::Dpi(args) => dpi::run(args).await,
             Self::Smartshift(args) => smartshift::run(args).await,

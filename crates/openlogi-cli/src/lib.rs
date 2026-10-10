@@ -146,6 +146,18 @@ mod tests {
     }
 
     #[test]
+    fn onboard_profile_info_is_a_read_only_cli_subcommand() {
+        let cli = Cli::try_parse_from(["openlogi", "diag", "profile-info", "--device", "G903"])
+            .expect("profile metadata read command parses");
+        match cli.cmd.expect("diag command") {
+            Command::Diag(DiagCmd::ProfileInfo(args)) => {
+                assert_eq!(args.device.as_deref(), Some("G903"));
+            }
+            other => panic!("expected diag profile-info, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn button_spy_timeout_is_bounded() {
         use cmd::diag::button_spy::ButtonSpyArgs;
         let cli = Cli::try_parse_from([
