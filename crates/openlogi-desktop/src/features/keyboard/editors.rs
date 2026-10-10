@@ -390,31 +390,33 @@ impl RenderOnce for WorkflowStepRow {
             .gap_1()
             .child(
                 div().flex_1().min_w_0().child(
-                MenuRow::new(("wf-step", idx))
-                    .child(
-                        h_flex()
-                            .w_full()
-                            .items_center()
-                            .gap_2()
-                            .child(
-                                svg()
-                                    .path(glyph)
-                                    .size_4()
-                                    .flex_none()
-                                    .text_color(pal.text_muted),
-                            )
-                            .child(
-                                div()
-                                    .text_caption()
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_color(pal.text_muted)
-                                    .child(type_label),
-                            )
-                            .child(div().flex_1().child(step_preview(&self.step, pal))),
-                    )
-                    .on_click(move |_e, window, cx| {
-                        view_edit.update(cx, |v, vcx| v.edit_workflow_step(idx, window, vcx));
-                    }),
+                    MenuRow::new(("wf-step", idx))
+                        .child(
+                            h_flex()
+                                .w_full()
+                                .items_center()
+                                .gap_2()
+                                .child(
+                                    svg()
+                                        .path(glyph)
+                                        .size_4()
+                                        .flex_none()
+                                        .text_color(pal.text_muted),
+                                )
+                                .child(
+                                    div()
+                                        .text_caption()
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .text_color(pal.text_muted)
+                                        .child(type_label),
+                                )
+                                .child(div().flex_1().child(step_preview(&self.step, pal))),
+                        )
+                        .on_click(move |_e, window, cx| {
+                            view_edit.update(cx, |v, vcx| {
+                                v.edit_workflow_step(idx, window, vcx);
+                            });
+                        }),
                 ),
             )
             .child(
