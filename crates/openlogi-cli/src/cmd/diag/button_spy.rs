@@ -118,7 +118,9 @@ pub async fn run(args: ButtonSpyArgs) -> Result<()> {
         println!("No 0x8110 notifications were observed; this does NOT prove that");
         println!("the physical buttons are indistinguishable on this device.");
     } else {
-        println!("Observed {reports_seen} 0x8110 reports. The bits are not yet mapped to G903 names.");
+        println!(
+            "Observed {reports_seen} 0x8110 reports. The bits are not yet mapped to G903 names."
+        );
     }
     Ok(())
 }
