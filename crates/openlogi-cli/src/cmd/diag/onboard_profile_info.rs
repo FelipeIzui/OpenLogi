@@ -98,7 +98,10 @@ pub async fn run(args: ProfileInfoArgs) -> Result<()> {
     println!("profile count: {}", description.profile_count);
     println!("factory profile count: {}", description.out_of_box_profiles);
     println!("firmware button entries: {}", description.button_count);
-    println!("sectors: {} x {} bytes", description.sector_count, description.sector_size);
+    println!(
+        "sectors: {} x {} bytes",
+        description.sector_count, description.sector_size
+    );
     println!("mechanical layout: 0x{:02x}", description.mechanical_layout);
     println!("various info: 0x{:02x}", description.various_info);
     println!("Only the descriptor was read. No profile sectors, mappings, or settings changed.");
