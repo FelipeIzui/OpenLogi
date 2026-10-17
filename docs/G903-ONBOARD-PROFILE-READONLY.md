@@ -67,6 +67,20 @@ The follow-up `profile-buttons` command (not available in older builds) performs
 .\bin\openlogi.exe diag profile-buttons --device G903
 ~~~
 
+### Verified G903 HERO hardware descriptor
+
+The Windows x64 test on the physical G903 LIGHTSPEED HERO returned:
+`0x8100 index=8`, memory model `1`, profile format `4`, macro
+format `1`, profile count `5`, factory profile count `1`,
+button entries `12`, sectors `16 x 255 bytes`, mechanical
+layout `0x0a`, various info `0x04`.
+
+**Interpretation limitation:** the first *enabled* profile in the
+CRC-validated directory is **not guaranteed to be the currently active
+profile**. The command intentionally does not switch or query the current
+mode/profile. Do not treat the printed assignments as the live button
+mapping until the active profile is independently confirmed.
+
 A format-4 profile contains 16 four-byte primary entries beginning at offset
 32 and 16 alternate entries at offset 96 (only 12 in use on this mouse).
 The read command requests 16 bytes per offset and clamps the last request
