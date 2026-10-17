@@ -388,7 +388,9 @@ impl Render for FunctionRowView {
         v_flex()
             .w_full()
             .items_center()
-            .when(g903_host_bridge, |content| content.child(g903_bridge_notice()))
+            .when(g903_host_bridge, |content| {
+                content.child(g903_bridge_notice())
+            })
             .child(InspectorRow::new(keyboard).panel(panel))
     }
 }
