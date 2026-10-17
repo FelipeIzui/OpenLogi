@@ -144,7 +144,7 @@ fn describe_binding(bytes: &[u8]) -> String {
     match bytes {
         [0x80, 0x01, hi, lo] => {
             let mask = u16::from_be_bytes([*hi, *lo]);
-            if mask.count_ones() == 1 {
+            if mask.is_power_of_two() {
                 format!("mouse button {}", mask.trailing_zeros() + 1)
             } else {
                 format!("mouse mask 0x{mask:04x}")
