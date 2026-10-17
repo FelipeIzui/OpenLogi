@@ -59,7 +59,7 @@ use gpui::{Animation, AnimationExt, img};
 mod key_points;
 
 pub(crate) use key_points::KeyTarget;
-use key_points::key_slots;
+use key_points::{g903_host_side_slots, key_slots};
 #[cfg(test)]
 use key_points::{EVEN_SPACING_END, EVEN_SPACING_START, key_x_fractions};
 
@@ -300,17 +300,31 @@ impl FunctionRowView {
 impl Render for FunctionRowView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let state = AppState::try_read(cx);
-        let asset = state.and_then(|state| state.current_record()?.asset.as_ref());
-        let glow = state.and_then(|state| {
-            state
-                .current_record()
-                .and_then(|record| keyboard_glow(state, record))
-        });
+        let g903_host_bridge = state
+            .and_then(AppState::current_record)
+            .is_some_and(crate::features::keyboard::g903_host_bridge_available);
+        // Mouse device imagery never doubles as a keyboard key map: the G903
+        // bridge uses a neutral placeholder and four explicit host F-keys.
+        let asset = state
+            .and_then(|state| state.current_record()?.asset.as_ref())
+            .filter(|_| !g903_host_bridge);
+        let glow = (!g903_host_bridge).then(|| {
+            state.and_then(|state| {
+                state
+                    .current_record()
+                    .and_then(|record| keyboard_glow(state, record))
+            })
+        }).flatten();
 
         let viewport_h = f32::from(window.viewport_size().height);
         let render_size = keyboard_render_size(asset, viewport_h);
         let image_path = asset.map(|asset| asset.image_path.clone());
-        let slots: Vec<KeySlot> = key_slots(asset)
+        let layouts = if g903_host_bridge {
+            g903_host_side_slots()
+        } else {
+            key_slots(asset)
+        };
+        let slots: Vec<KeySlot> = layouts
             .into_iter()
             .enumerate()
             .map(|(idx, layout)| {
@@ -392,6 +406,23 @@ impl Render for FunctionRowView {
         v_flex()
             .w_full()
             .items_center()
+            .when(g903_host_bridge, |content| {
+                content.child(
+                    div()
+                        .max_w(px(KEYBOARD_W))
+                        .mb_4()
+                        .child(
+                            div()
+                                .text_heading()
+                                .child("G903 — four side macros (F13–F16)"),
+                        )
+                        .child(
+                            div()
+                                .text_caption()
+                                .child("Configure four independent Windows keyboard actions or multi-step macros. These are global F-key bindings. Your G903 currently emits only two side-button signals: physical independence requires separate host key assignments outside this screen. No onboard profiles are changed."),
+                        ),
+                )
+            })
             .child(InspectorRow::new(keyboard).panel(panel))
     }
 }

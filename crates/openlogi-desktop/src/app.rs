@@ -142,10 +142,14 @@ impl DetailTab {
         // rules out Keys even for a kind=Keyboard record — see
         // `can_show_mouse_model` above — so a misclassified mouse gets only
         // the Buttons panel, not both.
-        if matches!(record.kind, DeviceKind::Keyboard)
+        if (matches!(record.kind, DeviceKind::Keyboard)
             && !caps.pointer
-            && (caps.buttons || record.asset.is_some())
+            && (caps.buttons || record.asset.is_some()))
+            || (can_show_mouse_model
+                && crate::features::keyboard::g903_host_bridge_available(record))
         {
+            // For a G903 on Windows this is a host F13-F16 macro workspace,
+            // not a firmware button editor. It preserves the mouse Buttons tab.
             tabs.push(Self::Keys);
         }
         if caps.pointer || caps.scroll_inversion || caps.hires_wheel {
