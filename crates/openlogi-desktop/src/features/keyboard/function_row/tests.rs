@@ -393,13 +393,20 @@ fn g903_host_key_slots_are_four_distinct_macro_triggers() {
     let slots = g903_host_side_slots();
     let names: Vec<_> = slots.iter().map(|slot| slot.legend.as_str()).collect();
     assert_eq!(names, ["F13", "F14", "F15", "F16"]);
-    let keys: BTreeSet<_> = slots.iter().map(|slot| match &slot.target {
-        KeyTarget::FunctionKey(trigger) => {
-            assert!(trigger.modifiers.is_empty());
-            trigger.keycode
-        }
-        KeyTarget::Control(_) => panic!("G903 bridge must never divert HID++ controls"),
-    }).collect();
+    let keys: BTreeSet<_> = slots
+        .iter()
+        .map(|slot| match &slot.target {
+            KeyTarget::FunctionKey(trigger) => {
+                assert!(trigger.modifiers.is_empty());
+                trigger.keycode
+            }
+            KeyTarget::Control(_) => panic!("G903 bridge must never divert HID++ controls"),
+        })
+        .collect();
     assert_eq!(keys.len(), 4);
-    assert!(slots.windows(2).all(|window| window[0].point.x_frac < window[1].point.x_frac));
+    assert!(
+        slots
+            .windows(2)
+            .all(|window| window[0].point.x_frac < window[1].point.x_frac)
+    );
 }

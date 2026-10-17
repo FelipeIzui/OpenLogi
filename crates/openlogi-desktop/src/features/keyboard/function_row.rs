@@ -59,9 +59,9 @@ use gpui::{Animation, AnimationExt, img};
 mod key_points;
 
 pub(crate) use key_points::KeyTarget;
-use key_points::{g903_host_side_slots, key_slots};
 #[cfg(test)]
 use key_points::{EVEN_SPACING_END, EVEN_SPACING_START, key_x_fractions};
+use key_points::{g903_host_side_slots, key_slots};
 
 /// Width of the config panel (CSS px) when a key is selected.
 const PANEL_W: f32 = 320.;
@@ -308,13 +308,15 @@ impl Render for FunctionRowView {
         let asset = state
             .and_then(|state| state.current_record()?.asset.as_ref())
             .filter(|_| !g903_host_bridge);
-        let glow = (!g903_host_bridge).then(|| {
-            state.and_then(|state| {
-                state
-                    .current_record()
-                    .and_then(|record| keyboard_glow(state, record))
+        let glow = (!g903_host_bridge)
+            .then(|| {
+                state.and_then(|state| {
+                    state
+                        .current_record()
+                        .and_then(|record| keyboard_glow(state, record))
+                })
             })
-        }).flatten();
+            .flatten();
 
         let viewport_h = f32::from(window.viewport_size().height);
         let render_size = keyboard_render_size(asset, viewport_h);
