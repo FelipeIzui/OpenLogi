@@ -159,14 +159,8 @@ mod tests {
 
     #[test]
     fn onboard_profile_buttons_is_a_read_only_cli_subcommand() {
-        let cli = Cli::try_parse_from([
-            "openlogi",
-            "diag",
-            "profile-buttons",
-            "--device",
-            "G903",
-        ])
-        .expect("read-only profile buttons command parses");
+        let cli = Cli::try_parse_from(["openlogi", "diag", "profile-buttons", "--device", "G903"])
+            .expect("read-only profile buttons command parses");
         match cli.cmd.expect("diag command") {
             Command::Diag(DiagCmd::ProfileButtons(args)) => {
                 assert_eq!(args.device.as_deref(), Some("G903"));

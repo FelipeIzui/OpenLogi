@@ -64,11 +64,17 @@ fn crc_ccitt(data: &[u8]) -> u16 {
 }
 
 fn check_sector_crc(sector: &[u8]) -> Result<()> {
-    ensure!(sector.len() == G903_SECTOR_SIZE, "unexpected profile sector length");
+    ensure!(
+        sector.len() == G903_SECTOR_SIZE,
+        "unexpected profile sector length"
+    );
     let payload_len = sector.len() - 2;
     let stored = u16::from_be_bytes([sector[payload_len], sector[payload_len + 1]]);
     let computed = crc_ccitt(&sector[..payload_len]);
-    ensure!(stored == computed, "profile sector CRC mismatch; no bindings decoded");
+    ensure!(
+        stored == computed,
+        "profile sector CRC mismatch; no bindings decoded"
+    );
     Ok(())
 }
 
@@ -293,7 +299,10 @@ mod tests {
             various_info: 4,
         };
         ensure_g903_format(sample).expect("known G903 descriptor");
-        ensure_g903_format(ProfileDescription { profile_format: 3, ..sample })
-            .expect_err("unknown layout forbidden");
+        ensure_g903_format(ProfileDescription {
+            profile_format: 3,
+            ..sample
+        })
+        .expect_err("unknown layout forbidden");
     }
 }

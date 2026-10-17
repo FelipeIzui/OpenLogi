@@ -54,7 +54,6 @@ pub(super) fn parse_description(data: [u8; 16]) -> ProfileDescription {
     }
 }
 
-
 pub(super) async fn read_description(
     channel: &HidppChannel,
     device_index: u8,
