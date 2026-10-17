@@ -59,9 +59,9 @@ use gpui::{Animation, AnimationExt, img};
 mod key_points;
 
 pub(crate) use key_points::KeyTarget;
-use key_points::key_slots;
 #[cfg(test)]
 use key_points::{EVEN_SPACING_END, EVEN_SPACING_START, key_x_fractions};
+use key_points::{g903_host_side_slots, key_slots};
 
 /// Width of the config panel (CSS px) when a key is selected.
 const PANEL_W: f32 = 320.;
@@ -300,32 +300,28 @@ impl FunctionRowView {
 impl Render for FunctionRowView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let state = AppState::try_read(cx);
-        let asset = state.and_then(|state| state.current_record()?.asset.as_ref());
-        let glow = state.and_then(|state| {
-            state
-                .current_record()
-                .and_then(|record| keyboard_glow(state, record))
-        });
+        let g903_host_bridge = state
+            .and_then(AppState::current_record)
+            .is_some_and(crate::features::keyboard::g903_host_bridge_available);
+        // Mouse device imagery never doubles as a keyboard key map: the G903
+        // bridge uses a neutral placeholder and four explicit host F-keys.
+        let asset = state
+            .and_then(|state| state.current_record()?.asset.as_ref())
+            .filter(|_| !g903_host_bridge);
+        let glow = (!g903_host_bridge)
+            .then(|| {
+                state.and_then(|state| {
+                    state
+                        .current_record()
+                        .and_then(|record| keyboard_glow(state, record))
+                })
+            })
+            .flatten();
 
         let viewport_h = f32::from(window.viewport_size().height);
         let render_size = keyboard_render_size(asset, viewport_h);
         let image_path = asset.map(|asset| asset.image_path.clone());
-        let slots: Vec<KeySlot> = key_slots(asset)
-            .into_iter()
-            .enumerate()
-            .map(|(idx, layout)| {
-                let bound = state.and_then(|state| bound_action(state, &layout.target));
-                KeySlot {
-                    idx,
-                    label: layout.legend.into(),
-                    x_frac: layout.point.x_frac,
-                    y_frac: layout.point.y_frac,
-                    binding: binding_label(bound.as_ref()),
-                    binding_icon: bound.as_ref().map(action_icon_path),
-                    target: layout.target,
-                }
-            })
-            .collect();
+        let slots = resolved_key_slots(state, asset, g903_host_bridge);
 
         // A stale selection can outlive a device switch to a shorter F-row;
         // drop it instead of indexing past the new slot list.
@@ -392,8 +388,57 @@ impl Render for FunctionRowView {
         v_flex()
             .w_full()
             .items_center()
+            .when(g903_host_bridge, |content| {
+                content.child(g903_bridge_notice())
+            })
             .child(InspectorRow::new(keyboard).panel(panel))
     }
+}
+
+/// Resolve a view's device-specific layouts into the existing binding model.
+fn resolved_key_slots(
+    state: Option<&AppState>,
+    asset: Option<&ResolvedAsset>,
+    g903_host_bridge: bool,
+) -> Vec<KeySlot> {
+    let layouts = if g903_host_bridge {
+        g903_host_side_slots()
+    } else {
+        key_slots(asset)
+    };
+    layouts
+        .into_iter()
+        .enumerate()
+        .map(|(idx, layout)| {
+            let bound = state.and_then(|state| bound_action(state, &layout.target));
+            KeySlot {
+                idx,
+                label: layout.legend.into(),
+                x_frac: layout.point.x_frac,
+                y_frac: layout.point.y_frac,
+                binding: binding_label(bound.as_ref()),
+                binding_icon: bound.as_ref().map(action_icon_path),
+                target: layout.target,
+            }
+        })
+        .collect()
+}
+
+/// Explain why four host shortcuts do not yet mean four physical mouse signals.
+fn g903_bridge_notice() -> gpui::Div {
+    div()
+        .max_w(px(KEYBOARD_W))
+        .mb_4()
+        .child(
+            div()
+                .text_heading()
+                .child("G903 — four side macros (F13–F16)"),
+        )
+        .child(
+            div()
+                .text_caption()
+                .child("Configure four Windows macros with F13-F16. Assign those keys to the four physical side buttons in G HUB first. These triggers are global; OpenLogi does not modify onboard profiles."),
+        )
 }
 
 /// The keyboard render size: the actual PNG aspect at up to [`KEYBOARD_W`]

@@ -96,6 +96,32 @@ pub(super) fn key_slots(asset: Option<&ResolvedAsset>) -> Vec<KeySlotLayout> {
     function_key_slots(fallback_key_points())
 }
 
+/// Four distinct host-key triggers. These are *not* names or positions of
+/// the G903's physical side switches. The currently-read onboard profile
+/// still emits only XBUTTON1/XBUTTON2 for its four lateral entries.
+pub(super) fn g903_host_side_slots() -> Vec<KeySlotLayout> {
+    [
+        FunctionKey::F13,
+        FunctionKey::F14,
+        FunctionKey::F15,
+        FunctionKey::F16,
+    ]
+    .into_iter()
+    .zip([0.14, 0.38, 0.62, 0.86])
+    .map(|(key, x_frac)| KeySlotLayout {
+        target: KeyTarget::FunctionKey(KeyTrigger {
+            keycode: key.keycode(),
+            modifiers: KeyModifiers::default(),
+        }),
+        legend: key.label().to_owned(),
+        point: KeyPoint {
+            x_frac,
+            y_frac: 0.50,
+        },
+    })
+    .collect()
+}
+
 /// The depot's control markers as key slots, each named by the control's
 /// catalog label (or its number). Ordered top row first, then left to right,
 /// so the callout band reads the way the keyboard does; the keys above the
