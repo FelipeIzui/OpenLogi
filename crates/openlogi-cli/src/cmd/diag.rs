@@ -12,10 +12,13 @@ use openlogi_core::device::DeviceInventory;
 use openlogi_hid::{DeviceRoute, dump_features};
 
 pub mod battery;
+pub mod button_spy;
 pub mod controls;
 pub mod dpi;
 pub mod features;
 pub mod lighting;
+pub mod onboard_profile_buttons;
+pub mod onboard_profile_info;
 pub mod pointer_speed;
 pub mod smartshift;
 pub mod wheel;
@@ -26,6 +29,12 @@ pub enum DiagCmd {
     Features(features::FeaturesArgs),
     /// Dump HID++ 0x1b04 reprogrammable controls and capability flags.
     Controls(controls::ControlsArgs),
+    /// Passively observe 0x8110 button-bitmap notifications (no device writes).
+    ButtonSpy(button_spy::ButtonSpyArgs),
+    /// Read 0x8100 onboard-profile metadata without reading or changing profiles.
+    ProfileInfo(onboard_profile_info::ProfileInfoArgs),
+    /// Read and validate the first enabled G903 profile's button mappings (no writes).
+    ProfileButtons(onboard_profile_buttons::ProfileButtonsArgs),
     /// Read the raw battery report (0x1004, 0x1000, or 0x1F20 fields).
     Battery(battery::BatteryArgs),
     /// Read DPI → write a small delta → read back → restore → report.
@@ -48,6 +57,9 @@ impl DiagCmd {
         match self {
             Self::Features(args) => features::run(args).await,
             Self::Controls(args) => controls::run(args).await,
+            Self::ButtonSpy(args) => button_spy::run(args).await,
+            Self::ProfileInfo(args) => onboard_profile_info::run(args).await,
+            Self::ProfileButtons(args) => onboard_profile_buttons::run(args).await,
             Self::Battery(args) => battery::run(args).await,
             Self::Dpi(args) => dpi::run(args).await,
             Self::Smartshift(args) => smartshift::run(args).await,

@@ -146,6 +146,56 @@ mod tests {
     }
 
     #[test]
+    fn onboard_profile_info_is_a_read_only_cli_subcommand() {
+        let cli = Cli::try_parse_from(["openlogi", "diag", "profile-info", "--device", "G903"])
+            .expect("profile metadata read command parses");
+        match cli.cmd.expect("diag command") {
+            Command::Diag(DiagCmd::ProfileInfo(args)) => {
+                assert_eq!(args.device.as_deref(), Some("G903"));
+            }
+            other => panic!("expected diag profile-info, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn onboard_profile_buttons_is_a_read_only_cli_subcommand() {
+        let cli = Cli::try_parse_from(["openlogi", "diag", "profile-buttons", "--device", "G903"])
+            .expect("read-only profile buttons command parses");
+        match cli.cmd.expect("diag command") {
+            Command::Diag(DiagCmd::ProfileButtons(args)) => {
+                assert_eq!(args.device.as_deref(), Some("G903"));
+            }
+            other => panic!("expected diag profile-buttons, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn button_spy_timeout_is_bounded() {
+        use cmd::diag::button_spy::ButtonSpyArgs;
+        let cli = Cli::try_parse_from([
+            "openlogi",
+            "diag",
+            "button-spy",
+            "--device",
+            "G903",
+            "--seconds",
+            "45",
+        ])
+        .expect("bounded read-only button spy command parses");
+        match cli.cmd.expect("diag command") {
+            Command::Diag(DiagCmd::ButtonSpy(ButtonSpyArgs { device, seconds })) => {
+                assert_eq!(device.as_deref(), Some("G903"));
+                assert_eq!(seconds, 45);
+            }
+            other => panic!("expected diag button spy, got {other:?}"),
+        }
+        for duration in ["0", "4", "121", "9999"] {
+            Cli::try_parse_from(["openlogi", "diag", "button-spy", "--seconds", duration])
+                .expect_err("out-of-range duration must be rejected");
+        }
+    }
+
+    #[test]
     fn lighting_color_is_positional_and_method_is_a_flag() {
         let cli = Cli::try_parse_from([
             "openlogi", "diag", "lighting", "ff0000", "--method", "effects",
