@@ -437,7 +437,7 @@ fn g903_bridge_notice() -> gpui::Div {
         .child(
             div()
                 .text_caption()
-                .child("Configure four independent Windows keyboard actions or multi-step macros. These are global F-key bindings. Your G903 currently emits only two side-button signals: physical independence requires separate host key assignments outside this screen. No onboard profiles are changed."),
+                .child("Configure four Windows macros with F13-F16. Assign those keys to the four physical side buttons in G HUB first. These triggers are global; OpenLogi does not modify onboard profiles."),
         )
 }
 
