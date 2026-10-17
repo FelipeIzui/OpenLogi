@@ -7,13 +7,14 @@
 use anyhow::{Context as _, Result, anyhow};
 use clap::Args;
 use hidpp::{
+    channel::HidppChannel,
     nibble::U4,
     protocol::v20::{Message, MessageHeader},
 };
 
 use super::select_device;
 
-const ONBOARD_PROFILES_FEATURE: u16 = 0x8100;
+pub(super) const ONBOARD_PROFILES_FEATURE: u16 = 0x8100;
 
 #[derive(Debug, Args)]
 pub struct ProfileInfoArgs {
@@ -23,22 +24,22 @@ pub struct ProfileInfoArgs {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ProfileDescription {
-    memory_model: u8,
-    profile_format: u8,
-    macro_format: u8,
-    profile_count: u8,
-    out_of_box_profiles: u8,
-    button_count: u8,
-    sector_count: u8,
-    sector_size: u16,
-    mechanical_layout: u8,
-    various_info: u8,
+pub(super) struct ProfileDescription {
+    pub(super) memory_model: u8,
+    pub(super) profile_format: u8,
+    pub(super) macro_format: u8,
+    pub(super) profile_count: u8,
+    pub(super) out_of_box_profiles: u8,
+    pub(super) button_count: u8,
+    pub(super) sector_count: u8,
+    pub(super) sector_size: u16,
+    pub(super) mechanical_layout: u8,
+    pub(super) various_info: u8,
 }
 
 /// The immutable first 16 bytes of GetProfilesDescription, *not* a profile
 /// sector or a remapping table. Device-specific formats must not be guessed.
-fn parse_description(data: [u8; 16]) -> ProfileDescription {
+pub(super) fn parse_description(data: [u8; 16]) -> ProfileDescription {
     ProfileDescription {
         memory_model: data[0],
         profile_format: data[1],
@@ -51,6 +52,32 @@ fn parse_description(data: [u8; 16]) -> ProfileDescription {
         mechanical_layout: data[9],
         various_info: data[10],
     }
+}
+
+
+pub(super) async fn read_description(
+    channel: &HidppChannel,
+    device_index: u8,
+    feature_index: u8,
+) -> Result<ProfileDescription> {
+    let query = Message::Short(
+        MessageHeader {
+            device_index,
+            feature_index,
+            function_id: U4::from_lo(0),
+            software_id: channel.get_sw_id(),
+        },
+        [0; 3],
+    );
+    // 0x8100 function 0 = GetProfilesDescription: only a read request.
+    let reply = channel
+        .send_v20(query)
+        .await
+        .context("read-only 0x8100 GetProfilesDescription request")?;
+    let Message::Long(_, payload) = reply else {
+        return Err(anyhow!("expected a full 16-byte profile description"));
+    };
+    Ok(parse_description(payload))
 }
 
 pub async fn run(args: ProfileInfoArgs) -> Result<()> {
@@ -70,25 +97,7 @@ pub async fn run(args: ProfileInfoArgs) -> Result<()> {
         .await
         .context("open HID++ device channel")?
         .ok_or_else(|| anyhow!("device HID++ channel unavailable"))?;
-    let query = Message::Short(
-        MessageHeader {
-            device_index: route.device_index(),
-            feature_index,
-            function_id: U4::from_lo(0),
-            software_id: channel.get_sw_id(),
-        },
-        [0; 3],
-    );
-    // 0x8100 function 0 = GetProfilesDescription; do not call any other
-    // function, read a sector, set onboard mode, or write any profile.
-    let reply = channel
-        .send_v20(query)
-        .await
-        .context("read-only 0x8100 GetProfilesDescription request")?;
-    let Message::Long(_, payload) = reply else {
-        return Err(anyhow!("expected a full 16-byte profile description"));
-    };
-    let description = parse_description(payload);
+    let description = read_description(&channel, route.device_index(), feature_index).await?;
 
     println!("device: {name}");
     println!("0x8100 feature index: {feature_index}");

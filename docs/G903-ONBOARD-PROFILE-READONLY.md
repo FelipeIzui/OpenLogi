@@ -48,3 +48,36 @@ A firmware entry count of 12 does **not** mean Windows can see 12 independent
 events. Four individual bindings would require the device to report
 distinguishable host events, possibly by first assigning physically distinct
 slots to spare keyboard usages in a future *opt-in, backed-up* operation.
+
+## Read-only button mapping snapshot (format 4 only)
+
+The user's G903 HERO reports `memory model=1`, `profile format=4`,
+`macro format=1`, `12 button entries`, `5 profile slots`, and
+`16 sectors of 255 bytes`.
+
+The follow-up `profile-buttons` command (not available in older builds) performs:
+- 0x8100 GetProfilesDescription (function 0);
+- MemoryRead (function 5) of CRC-validated directory sector 0;
+- MemoryRead (function 5) of the first **enabled** profile sector only;
+- decode only 12 primary/alternate button entries; print no profile names,
+  macro payloads, or full sector data. No files are created.
+- refuse unknown descriptor formats, invalid addresses, and CRC failures.
+
+~~~powershell
+.\bin\openlogi.exe diag profile-buttons --device G903
+~~~
+
+A format-4 profile contains 16 four-byte primary entries beginning at offset
+32 and 16 alternate entries at offset 96 (only 12 in use on this mouse).
+The read command requests 16 bytes per offset and clamps the last request
+to 239 for the 255-byte sector. The last two sector bytes hold CCITT-FALSE
+CRC. This implementation follows the existing **read-only** protocol and
+layout in the open-source libratbag `src/hidpp20.c` and
+`src/hidpp-generic.c`.
+
+References: https://github.com/libratbag/libratbag/blob/master/src/hidpp20.c
+and https://github.com/libratbag/libratbag/issues/1464 .
+
+Interpreting bindings is not proof that the host receives independent button
+events. Flash writes and any mode/profile changes remain prohibited in this
+phase. No new installer until full cross-platform CI passes.
