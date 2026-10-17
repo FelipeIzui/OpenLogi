@@ -75,6 +75,12 @@ fn check_sector_crc(sector: &[u8]) -> Result<()> {
 /// Each onboard memory read returns 16 bytes. Offset 239 is the last safe
 /// 16-byte window of a 255-byte sector; reading from 240 is an invalid
 /// argument on Logitech firmware.
+fn sector_read_offsets() -> impl Iterator<Item = usize> {
+    (0..G903_SECTOR_SIZE)
+        .step_by(16)
+        .map(|start| start.min(G903_SECTOR_SIZE - 16))
+}
+
 async fn read_sector(
     channel: &HidppChannel,
     device_index: u8,
@@ -82,8 +88,7 @@ async fn read_sector(
     sector_index: u16,
 ) -> Result<[u8; G903_SECTOR_SIZE]> {
     let mut sector = [0u8; G903_SECTOR_SIZE];
-    for start in (0..G903_SECTOR_SIZE).step_by(16) {
-        let offset = start.min(G903_SECTOR_SIZE - 16);
+    for offset in sector_read_offsets() {
         let mut request = [0u8; 16];
         request[..2].copy_from_slice(&sector_index.to_be_bytes());
         request[2..4].copy_from_slice(&u16::try_from(offset)?.to_be_bytes());
@@ -226,6 +231,16 @@ mod tests {
     fn with_updated_crc(bytes: &mut [u8; G903_SECTOR_SIZE]) {
         let crc = crc_ccitt(&bytes[..G903_SECTOR_SIZE - 2]);
         bytes[G903_SECTOR_SIZE - 2..].copy_from_slice(&crc.to_be_bytes());
+    }
+
+    #[test]
+    fn last_profile_read_window_stays_inside_the_255_byte_sector() {
+        let offsets: Vec<_> = sector_read_offsets().collect();
+        assert_eq!(offsets.len(), 16);
+        assert_eq!(offsets[0], 0);
+        assert_eq!(offsets[14], 224);
+        assert_eq!(offsets[15], 239);
+        assert!(offsets.iter().all(|offset| offset + 16 <= G903_SECTOR_SIZE));
     }
 
     #[test]
